@@ -8,7 +8,6 @@ namespace
 	constexpr std::size_t kMaximumBusCount = 4U;
 	constexpr std::size_t kQueueCapacity = 8U;
 	constexpr std::uint8_t kMaximumChipSelect = 5U;
-	constexpr std::uint32_t kPeripheralClockHz = 64000000U;
 	constexpr std::uint32_t kHalt = 0x00000001U;
 	constexpr std::uint32_t kMaster = 0x80000000U;
 	constexpr std::uint32_t kOverwriteOnReceiveOverflow = 0x01000000U;
@@ -16,9 +15,12 @@ namespace
 	constexpr std::uint32_t kClearTransmitFifo = 0x00000800U;
 	constexpr std::uint32_t kClearReceiveFifo = 0x00000400U;
 	constexpr std::uint32_t kContinuousChipSelect = 0x80000000U;
+	constexpr std::uint32_t kClockTransferAttributeShift = 28U;
 	constexpr std::uint32_t kChipSelectShift = 16U;
 	constexpr std::uint32_t kReceiveFifoDrainFlag = 0x00020000U;
 	constexpr std::uint32_t kStatusFlagsToClear = 0x9A0A0000U;
+	constexpr std::size_t kHardwareFifoDepth = 4U;
+	constexpr std::size_t kClockTransferAttributeCount = 8U;
 	constexpr std::uint16_t kBaudPrescalers[] = {2U, 3U, 5U, 7U};
 	constexpr std::uint16_t kBaudScalers[] = {
 		2U, 4U, 6U, 8U, 16U, 32U, 64U, 128U,
@@ -79,7 +81,8 @@ namespace MPC5xxx
 		std::size_t QueueHead = 0U;
 		std::size_t QueueTail = 0U;
 		std::size_t QueueCount = 0U;
-		std::size_t FrameIndex = 0U;
+		std::size_t TransmitFrameIndex = 0U;
+		std::size_t ReceiveFrameIndex = 0U;
 		bool Active = false;
 	};
 
@@ -143,10 +146,14 @@ namespace MPC5xxx
 
 	MPC5xxxSPIService::MPC5xxxSPIService(
 		volatile DSPI_tag* dspi,
-		const MPC5xxxSPIServiceConfiguration& configuration)
-		: _dspi(dspi), _configuration(configuration)
+		const MPC5xxxSPIServiceConfiguration& configuration,
+		std::uint32_t moduleClockHz)
+		: _dspi(dspi),
+		  _configuration(configuration),
+		  _moduleClockHz(moduleClockHz)
 	{
 		if (dspi == nullptr || configuration.chipSelect > kMaximumChipSelect ||
+			moduleClockHz == 0U ||
 			configuration.clockSpeedHz == 0U ||
 			configuration.bitsPerWord < 4U ||
 			configuration.bitsPerWord > 16U)
@@ -185,7 +192,7 @@ namespace MPC5xxx
 				for (std::uint32_t scaler = 0U; scaler < 16U; ++scaler)
 				{
 					const std::uint32_t actual =
-						(kPeripheralClockHz * (doubleBaud + 1U)) /
+						(_moduleClockHz * (doubleBaud + 1U)) /
 						(kBaudPrescalers[prescaler] * kBaudScalers[scaler]);
 					const std::uint32_t error =
 						actual > _configuration.clockSpeedHz
@@ -204,13 +211,13 @@ namespace MPC5xxx
 
 		const EncodedDelay chipSelectToClock = EncodeDelay(
 			timing.chipSelectToClockNanoseconds,
-			kPeripheralClockHz);
+			_moduleClockHz);
 		const EncodedDelay afterClock = EncodeDelay(
 			timing.afterClockNanoseconds,
-			kPeripheralClockHz);
+			_moduleClockHz);
 		const EncodedDelay afterTransfer = EncodeDelay(
 			timing.afterTransferNanoseconds,
-			kPeripheralClockHz);
+			_moduleClockHz);
 
 		std::uint32_t attributes =
 			baudFields |
@@ -272,31 +279,49 @@ namespace MPC5xxx
 		if (_bus == nullptr || _bus->Active || _bus->QueueCount == 0U)
 			return;
 		_bus->Active = true;
-		_bus->FrameIndex = 0U;
-		_bus->Queue[_bus->QueueHead].Endpoint->StartCurrentFrame();
+		_bus->TransmitFrameIndex = 0U;
+		_bus->ReceiveFrameIndex = 0U;
+		_bus->Queue[_bus->QueueHead].Endpoint->FillTransmitFifo();
 	}
 
-	void MPC5xxxSPIService::StartCurrentFrame()
+	void MPC5xxxSPIService::FillTransmitFifo()
 	{
 		SPIQueuedTransfer& transfer = _bus->Queue[_bus->QueueHead];
 		MPC5xxxSPIService& endpoint = *transfer.Endpoint;
 		const std::size_t bytesPerFrame =
 			(endpoint._configuration.bitsPerWord + 7U) / 8U;
-		const std::size_t offset = _bus->FrameIndex * bytesPerFrame;
-		std::uint16_t transmitted = transfer.Data[offset];
-		if (bytesPerFrame == 2U)
-			transmitted = static_cast<std::uint16_t>(
-				(static_cast<std::uint16_t>(transfer.Data[offset]) << 8U) |
-				transfer.Data[offset + 1U]);
-
-		_dspi->CTAR[0].R = endpoint.BuildClockTransferAttributes(
-			endpoint.TimingForFrame(_bus->FrameIndex));
 		const std::size_t frameCount = transfer.Length / bytesPerFrame;
-		_dspi->SR.R = kReceiveFifoDrainFlag;
-		_dspi->PUSHR.R =
-			(_bus->FrameIndex + 1U != frameCount ? kContinuousChipSelect : 0U) |
-			((1U << endpoint._configuration.chipSelect) << kChipSelectShift) |
-			transmitted;
+
+		// TXCTR can drop as soon as a frame moves into the shifter. Bound the
+		// number of in-flight frames instead, so the four-entry RX FIFO cannot
+		// overflow if Service() is not called again before all four complete.
+		while (_bus->TransmitFrameIndex < frameCount &&
+			_bus->TransmitFrameIndex - _bus->ReceiveFrameIndex <
+				kHardwareFifoDepth)
+		{
+			const std::size_t frameIndex = _bus->TransmitFrameIndex;
+			const std::size_t offset = frameIndex * bytesPerFrame;
+			std::uint16_t transmitted = transfer.Data[offset];
+			if (bytesPerFrame == 2U)
+				transmitted = static_cast<std::uint16_t>(
+					(static_cast<std::uint16_t>(transfer.Data[offset]) << 8U) |
+					transfer.Data[offset + 1U]);
+
+			// Each queued frame retains its own timing selection. This matters for
+			// the MPM transfer, whose first two frames use different delays.
+			const std::size_t ctarIndex =
+				frameIndex % kClockTransferAttributeCount;
+			_dspi->CTAR[ctarIndex].R = endpoint.BuildClockTransferAttributes(
+				endpoint.TimingForFrame(frameIndex));
+			_dspi->PUSHR.R =
+				(frameIndex + 1U != frameCount ? kContinuousChipSelect : 0U) |
+				(static_cast<std::uint32_t>(ctarIndex) <<
+					kClockTransferAttributeShift) |
+				((1U << endpoint._configuration.chipSelect) <<
+					kChipSelectShift) |
+				transmitted;
+			++_bus->TransmitFrameIndex;
+		}
 	}
 
 	void MPC5xxxSPIService::Service(volatile DSPI_tag& dspi)
@@ -310,29 +335,40 @@ namespace MPC5xxx
 				bus->Queue[bus->QueueHead].Endpoint->StartNextQueuedTransfer();
 			return;
 		}
-		if ((dspi.SR.R & kReceiveFifoDrainFlag) == 0U)
+		if (dspi.SR.B.RXCTR == 0U)
 			return;
 
 		SPIQueuedTransfer& transfer = bus->Queue[bus->QueueHead];
 		MPC5xxxSPIService& endpoint = *transfer.Endpoint;
 		const std::size_t bytesPerFrame =
 			(endpoint._configuration.bitsPerWord + 7U) / 8U;
-		const std::uint16_t received = static_cast<std::uint16_t>(dspi.POPR.R);
-		const std::size_t offset = bus->FrameIndex * bytesPerFrame;
-		if (bytesPerFrame == 2U)
+		const std::size_t frameCount = transfer.Length / bytesPerFrame;
+		while (dspi.SR.B.RXCTR != 0U &&
+			bus->ReceiveFrameIndex < frameCount)
 		{
-			transfer.Data[offset] = static_cast<std::uint8_t>(received >> 8U);
-			transfer.Data[offset + 1U] = static_cast<std::uint8_t>(received);
+			const std::uint16_t received =
+				static_cast<std::uint16_t>(dspi.POPR.R);
+			const std::size_t offset =
+				bus->ReceiveFrameIndex * bytesPerFrame;
+			if (bytesPerFrame == 2U)
+			{
+				transfer.Data[offset] =
+					static_cast<std::uint8_t>(received >> 8U);
+				transfer.Data[offset + 1U] =
+					static_cast<std::uint8_t>(received);
+			}
+			else
+			{
+				transfer.Data[offset] = static_cast<std::uint8_t>(received);
+			}
+			++bus->ReceiveFrameIndex;
 		}
-		else
-		{
-			transfer.Data[offset] = static_cast<std::uint8_t>(received);
-		}
+		// RFDF remains asserted after the last POPR read in software mode.
+		dspi.SR.R = kReceiveFifoDrainFlag;
 
-		++bus->FrameIndex;
-		if (bus->FrameIndex < transfer.Length / bytesPerFrame)
+		if (bus->ReceiveFrameIndex < frameCount)
 		{
-			endpoint.StartCurrentFrame();
+			endpoint.FillTransmitFifo();
 			return;
 		}
 
@@ -345,7 +381,8 @@ namespace MPC5xxx
 		transfer.CompletionCallback = nullptr;
 		bus->QueueHead = (bus->QueueHead + 1U) % kQueueCapacity;
 		--bus->QueueCount;
-		bus->FrameIndex = 0U;
+		bus->TransmitFrameIndex = 0U;
+		bus->ReceiveFrameIndex = 0U;
 		bus->Active = false;
 		if (completionCallback)
 			completionCallback(completedData, completedLength);

@@ -21,6 +21,7 @@ namespace E78
 			0xFFU, 0x53U, 0x10U, 0x00U, 0x09U, 0xB2U,
 		};
 		volatile std::uint8_t _response[PacketLength] = {};
+		bool _transferPending = false;
 
 		std::uint8_t ComputeXor() const;
 

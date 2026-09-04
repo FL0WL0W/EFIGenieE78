@@ -6,9 +6,9 @@ namespace E78
 		std::size_t frameIndex) const
 	{
 		if (frameIndex == 0U)
-			return {1750U, 640000U, 219U};
+			return {875U, 320000U, 110U};
 		if (frameIndex == 1U)
-			return {1750U, 192000U, 28000U};
-		return {1750U, 56000U, 28000U};
+			return {875U, 96000U, 14000U};
+		return {875U, 28000U, 14000U};
 	}
 }

@@ -19,13 +19,13 @@ namespace
 
 	constexpr MPC5xxx::MPC5xxxSPIServiceConfiguration MPMConfiguration = {
 		1U,
-		62500U,
+		125000U,
 		8U,
 		MPC5xxx::SPIClockPolarity::IdleLow,
 		MPC5xxx::SPIClockPhase::CaptureOnTrailingEdge,
-		1750U,
-		640000U,
-		219U,
+		875U,
+		320000U,
+		110U,
 		false,
 		false,
 	};
@@ -46,10 +46,20 @@ namespace
 
 namespace E78
 {
-	E78SPISystem::E78SPISystem()
-		: _on20845SPI(&DSPI_D, ON20845Configuration),
-		  _mpmSPI(&DSPI_D, MPMConfiguration),
-		  _delphi28046304SPI(&DSPI_B, DelphiConfiguration),
+	E78SPISystem::E78SPISystem(
+		const MPC5xxx::MPC5566SystemClockService& systemClock)
+		: _on20845SPI(
+			  &DSPI_D,
+			  ON20845Configuration,
+			  systemClock.PeripheralClockHz()),
+		  _mpmSPI(
+			  &DSPI_D,
+			  MPMConfiguration,
+			  systemClock.PeripheralClockHz()),
+		  _delphi28046304SPI(
+			  &DSPI_B,
+			  DelphiConfiguration,
+			  systemClock.PeripheralClockHz()),
 		  _delphiDigitalOutputService(
 			  &DSPI_A,
 			  &DSPI_C,
@@ -65,13 +75,29 @@ namespace E78
 		  Delphi28046304(_delphi28046304SPI),
 		  DelphiDigitalOutputs(_delphiDigitalOutputService)
 	{
-		// E78 board-specific DSPI-B routing. Pin muxing intentionally remains
-		// outside MPC5xxxSPIService because these pad assignments and electrical
-		// settings are specific to this ECU and MCU package.
-		SIU.PCR[102].R = 0x0604U; // SCKB
-		SIU.PCR[103].R = 0x0514U; // SINB
-		SIU.PCR[104].R = 0x0614U; // SOUTB
-		SIU.PCR[105].R = 0x0604U; // PCSB0
+		// E78 board-specific SPI routing, copied from the stock application's
+		// PCR image. The SPI system owns every pad it uses and does not depend on
+		// state inherited from the bootloader.
+
+		// DSPI-D: ON20845 on PCS0, MPM on PCS1, and the stock PCS3 route.
+		SIU.PCR[87U].R = 0x0A04U;  // PCSD3
+		SIU.PCR[91U].R = 0x0A04U;  // PCSD1 / MPM
+		SIU.PCR[98U].R = 0x0A04U;  // SCKD
+		SIU.PCR[99U].R = 0x0914U;  // SIND
+		SIU.PCR[100U].R = 0x0A14U; // SOUTD
+		SIU.PCR[106U].R = 0x0A04U; // PCSD0 / ON20845
+
+		// DSPI-B: Delphi 28046304 command/diagnostic interface.
+		SIU.PCR[102U].R = 0x0604U; // SCKB
+		SIU.PCR[103U].R = 0x0514U; // SINB
+		SIU.PCR[104U].R = 0x0614U; // SOUTB
+		SIU.PCR[105U].R = 0x0604U; // PCSB0
+
+		// DSI chain: DSPI-A supplies serialized data while DSPI-C supplies the
+		// clock and chip select to the Delphi ASIC.
+		SIU.PCR[95U].R = 0x060CU;  // SOUTA
+		SIU.PCR[109U].R = 0x0A0CU; // SCKC
+		SIU.PCR[110U].R = 0x0A0CU; // PCSC0
 
 		MPM.InitializeNormalMode();
 	}

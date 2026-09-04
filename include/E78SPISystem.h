@@ -4,6 +4,7 @@
 #include "Delphi28046304Device.h"
 #include "MPC5xxxDSISerialOutputService.h"
 #include "MPC5xxxSPIService.h"
+#include "MPC5566SystemClockService.h"
 #include "MPMDevice.h"
 #include "MPMSPIService.h"
 #include "ON20845-007Device.h"
@@ -24,7 +25,8 @@ namespace E78
 		Delphi28046304Device Delphi28046304;
 		EmbeddedIOServices::IDigitalService& DelphiDigitalOutputs;
 
-		E78SPISystem();
+		explicit E78SPISystem(
+			const MPC5xxx::MPC5566SystemClockService& systemClock);
 
 		void Service();
 		void ServiceWatchdogs();

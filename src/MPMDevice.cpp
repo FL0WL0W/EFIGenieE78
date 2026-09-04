@@ -29,13 +29,18 @@ namespace E78
 
 	void MPMDevice::ServiceNormalMode()
 	{
-		_transmit[0] = _transmit[0] == 0x19U ? 0x06U : 0x19U;
+		if (_transferPending)
+			return;
+
+		const std::uint8_t previousOpcode = _transmit[0];
+		const std::uint8_t previousChecksum = _transmit[17];
+		_transmit[0] = previousOpcode == 0x19U ? 0x06U : 0x19U;
 		_transmit[17] = ComputeXor();
 
 		std::uint8_t packet[PacketLength] = {};
 		for (std::size_t i = 0U; i < PacketLength; ++i)
 			packet[i] = _transmit[i];
-		_service.Transfer(
+		if (!_service.Transfer(
 			packet,
 			sizeof(packet),
 			[this](std::uint8_t* response, std::size_t length) {
@@ -43,6 +48,15 @@ namespace E78
 					length < PacketLength ? length : PacketLength;
 				for (std::size_t i = 0U; i < bytesToCopy; ++i)
 					_response[i] = response[i];
-			});
+				_transferPending = false;
+			}))
+		{
+			// A rejected queue submission was never visible to the MPM. Restore
+			// the rolling opcode so the next accepted frame still alternates.
+			_transmit[0] = previousOpcode;
+			_transmit[17] = previousChecksum;
+			return;
+		}
+		_transferPending = true;
 	}
 }

@@ -2,6 +2,7 @@
 #include "MPC5xxxAnalogService.h"
 #include "MPC5xxxDigitalService.h"
 #include "MPC5xxxFlexCAN2Service.h"
+#include "MPC5566SystemClockService.h"
 #include "UDSService.h"
 
 #include <cstddef>
@@ -25,7 +26,7 @@ extern "C" __attribute__((weak)) bool WriteToFlash(
 
 namespace
 {
-	constexpr std::uint32_t LoopPeriodTimebaseTicks = 0x0005DC00U;
+	constexpr std::uint32_t LoopPeriodTimebaseTicks = 0x00080000U;
 	constexpr std::uint32_t IgnitionTogglePeriodTimebaseTicks = 0x0004E200U;
 	constexpr std::uint32_t IgnitionToggleWaitToCaptureTimebaseTicks = 0x0002E200U;
 	constexpr std::uint32_t AnalogDetectionPeriodTimebaseTicks = 0x00F42400U;
@@ -59,7 +60,8 @@ extern "C" int main()
 {
 	asm("wrteei 0");
 
-	E78::E78SPISystem spiSystem;
+	MPC5566SystemClockService systemClock(8000000U, 128000000U);
+	E78::E78SPISystem spiSystem(systemClock);
 	spiSystem.ON20845.SendOutputConfiguration();
 	spiSystem.DelphiDigitalOutputs.InitPin(4U, Out);
 	spiSystem.DelphiDigitalOutputs.WritePin(4U, true);
@@ -146,6 +148,10 @@ extern "C" int main()
                     FirstAnalogChannel + channelIndex);
                 const float voltage = analogService.ReadPin(
                     channel);
+				// Keep the cooperative DSPI FIFOs supplied during the polling ADC
+				// scan. In particular, an MPM packet is longer than DSPI's four-entry
+				// hardware FIFO.
+				spiSystem.Service();
                 if (ignitionOutputState)
                 {
                     if(voltage < 2.5F)
@@ -205,11 +211,11 @@ extern "C" int main()
 		ServiceCoreWatchdog();
 		spiSystem.ServiceWatchdogs();
 		injectorOutputState = !injectorOutputState;
-		// for (std::size_t channel = 0U; channel < EngineOutputCount; ++channel)
-		// {
-		// 	digitalService.WritePin(
-		// 		static_cast<digitalpin_t>(FirstInjectorPin + channel),
-		// 		injectorOutputState);
-		// }
+		for (std::size_t channel = 0U; channel < EngineOutputCount; ++channel)
+		{
+			digitalService.WritePin(
+				static_cast<digitalpin_t>(FirstInjectorPin + channel),
+				injectorOutputState);
+		}
 	}
 }
