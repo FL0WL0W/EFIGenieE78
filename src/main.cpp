@@ -36,6 +36,16 @@ namespace
 	constexpr digitalpin_t FirstInjectorPin = 132U;
 	constexpr digitalpin_t FirstIgnitionPin = 167U;
 	constexpr std::size_t EngineOutputCount = 6U;
+	constexpr std::uint16_t FlexCANARxVectorFirst = 155U;
+	constexpr std::uint8_t FlexCANInterruptPriority = 1U;
+	MPC5xxxFlexCAN2Service* canServiceForInterrupts = nullptr;
+
+	void PollFlexCANAInterrupt()
+	{
+		if (canServiceForInterrupts != nullptr)
+			canServiceForInterrupts->PollFlexCAN(CAN_A);
+	}
+
 	std::uint32_t ReadTimebase()
 	{
 		std::uint32_t value;
@@ -55,6 +65,33 @@ namespace
 			: "memory");
 	}
 }
+
+extern "C" void FlexCAN_A_Buffer0_Handler()
+{
+	PollFlexCANAInterrupt();
+}
+
+#define FLEXCAN_A_RX_HANDLER_ALIAS(mailbox) \
+	extern "C" void FlexCAN_A_Buffer##mailbox##_Handler() \
+		__attribute__((alias("FlexCAN_A_Buffer0_Handler")))
+
+FLEXCAN_A_RX_HANDLER_ALIAS(1);
+FLEXCAN_A_RX_HANDLER_ALIAS(2);
+FLEXCAN_A_RX_HANDLER_ALIAS(3);
+FLEXCAN_A_RX_HANDLER_ALIAS(4);
+FLEXCAN_A_RX_HANDLER_ALIAS(5);
+FLEXCAN_A_RX_HANDLER_ALIAS(6);
+FLEXCAN_A_RX_HANDLER_ALIAS(7);
+FLEXCAN_A_RX_HANDLER_ALIAS(8);
+FLEXCAN_A_RX_HANDLER_ALIAS(9);
+FLEXCAN_A_RX_HANDLER_ALIAS(10);
+FLEXCAN_A_RX_HANDLER_ALIAS(11);
+FLEXCAN_A_RX_HANDLER_ALIAS(12);
+FLEXCAN_A_RX_HANDLER_ALIAS(13);
+FLEXCAN_A_RX_HANDLER_ALIAS(14);
+FLEXCAN_A_RX_HANDLER_ALIAS(15);
+
+#undef FLEXCAN_A_RX_HANDLER_ALIAS
 
 extern "C" int main()
 {
@@ -121,6 +158,31 @@ extern "C" int main()
 		WriteToFlash,
 		ExitToBootloaderUploadRoutine);
 
+	canServiceForInterrupts = &canService;
+	CAN_A.IMRH.R = 0U;
+	CAN_A.IMRL.R = 0U;
+	CAN_A.CR.B.BOFFMSK = 0U;
+	CAN_A.CR.B.ERRMSK = 0U;
+	CAN_A.CR.B.TWRNMSK = 0U;
+	CAN_A.CR.B.RWRNMSK = 0U;
+	CAN_A.MCR.B.WRNEN = 0U;
+	CAN_A.IFRH.R = 0xFFFFFFFFU;
+	CAN_A.IFRL.R = 0xFFFFFFFFU;
+	for (std::uint16_t vector = FlexCANARxVectorFirst;
+		vector < FlexCANARxVectorFirst + 16U;
+		++vector)
+	{
+		INTC.PSR[vector].R = FlexCANInterruptPriority;
+	}
+	CAN_A.IMRL.R = 0x0000FFFFU;
+	asm volatile(
+		"mbar\n"
+		"wrteei 1\n"
+		"isync\n"
+		:
+		:
+		: "memory");
+
 	const std::uint8_t alive = 0x99U;
 	isotp->Send(&alive, 1U);
 	uint32_t misses[AnalogChannelCount] = {};
@@ -132,7 +194,6 @@ extern "C" int main()
 	std::uint32_t analogWindowStart = loopStart;
 	while (true)
 	{
-		canService.PollFlexCAN(CAN_A);
 		spiSystem.Service();
 
 		const std::uint32_t now = ReadTimebase();

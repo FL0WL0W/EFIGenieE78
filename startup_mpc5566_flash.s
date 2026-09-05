@@ -112,6 +112,10 @@ BssInitialized:
 	lis	r2, _SDA2_BASE_@h
 	ori	r2, r2, _SDA2_BASE_@l
 
+	;# Install the e200z6 IVORs and select MPC5566 INTC hardware-vector mode.
+	;# This also clears all inherited INTC priorities and leaves MSR[EE] clear.
+	bl	InitializeHardwareInterrupts
+
 	bl	main
 ApplicationReturned:
 	b	ApplicationReturned

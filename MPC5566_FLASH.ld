@@ -52,6 +52,18 @@ SECTIONS
 		KEEP(*(.fini))
 	} > FLASH
 
+	/*
+	 * MPC5566 hardware-vector mode forms each external-interrupt address from
+	 * IVPR plus vector_number * 0x10. The core IVOR trampolines share this
+	 * region immediately after the 332 INTC slots.
+	 */
+	.intc_vector_table : ALIGN(0x10000)
+	{
+		__INTERRUPT_VECTOR_BASE = .;
+		KEEP(*(.intc_vector_table))
+		__INTERRUPT_VECTOR_END = .;
+	} > FLASH
+
 	.ctors : ALIGN(4)
 	{
 		__CTOR_LIST__ = .;
@@ -186,6 +198,8 @@ SECTIONS
 	ASSERT(__SP_INIT <= ORIGIN(SRAM_RUNTIME) + LENGTH(SRAM_RUNTIME), "runtime heap/stack exceeds working SRAM window")
 	ASSERT(__APPLICATION_DATA_SRAM_END <= ORIGIN(SRAM_DATA) + LENGTH(SRAM_DATA), "application data exceeds working SRAM window")
 	ASSERT(ADDR(.startup) == 0x00080010, "bootloader application entry moved")
+	ASSERT((ADDR(.intc_vector_table) & 0xFFFF) == 0, "interrupt vectors are not 64-KiB aligned")
+	ASSERT(SIZEOF(.intc_vector_table) <= 0x10000, "interrupt vectors exceed one IVPR region")
 	ASSERT(ADDR(.application_exports) == 0x002FFFE8, "bootloader export table moved")
 	ASSERT(SIZEOF(.application_exports) == 0x18, "bootloader export table has wrong size")
 }
