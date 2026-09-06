@@ -2,7 +2,7 @@
 #include "MPC5xxxAnalogService.h"
 #include "MPC5xxxDigitalService.h"
 #include "MPC5xxxFlexCAN2Service.h"
-#include "MPC5566SystemClockService.h"
+#include "MPC55xxSystemClockService.h"
 #include "UDSService.h"
 
 #include <cstddef>
@@ -37,15 +37,9 @@ namespace
 	constexpr digitalpin_t FirstIgnitionPin = 167U;
 	constexpr std::size_t EngineOutputCount = 6U;
 	constexpr std::uint16_t FlexCANARxVectorFirst = 155U;
+	constexpr std::uint16_t FlexCANARxHighVector = 171U;
+	constexpr std::uint16_t FlexCANATxHighVector = 172U;
 	constexpr std::uint8_t FlexCANInterruptPriority = 1U;
-	MPC5xxxFlexCAN2Service* canServiceForInterrupts = nullptr;
-
-	void PollFlexCANAInterrupt()
-	{
-		if (canServiceForInterrupts != nullptr)
-			canServiceForInterrupts->PollFlexCAN(CAN_A);
-	}
-
 	std::uint32_t ReadTimebase()
 	{
 		std::uint32_t value;
@@ -66,39 +60,12 @@ namespace
 	}
 }
 
-extern "C" void FlexCAN_A_Buffer0_Handler()
-{
-	PollFlexCANAInterrupt();
-}
-
-#define FLEXCAN_A_RX_HANDLER_ALIAS(mailbox) \
-	extern "C" void FlexCAN_A_Buffer##mailbox##_Handler() \
-		__attribute__((alias("FlexCAN_A_Buffer0_Handler")))
-
-FLEXCAN_A_RX_HANDLER_ALIAS(1);
-FLEXCAN_A_RX_HANDLER_ALIAS(2);
-FLEXCAN_A_RX_HANDLER_ALIAS(3);
-FLEXCAN_A_RX_HANDLER_ALIAS(4);
-FLEXCAN_A_RX_HANDLER_ALIAS(5);
-FLEXCAN_A_RX_HANDLER_ALIAS(6);
-FLEXCAN_A_RX_HANDLER_ALIAS(7);
-FLEXCAN_A_RX_HANDLER_ALIAS(8);
-FLEXCAN_A_RX_HANDLER_ALIAS(9);
-FLEXCAN_A_RX_HANDLER_ALIAS(10);
-FLEXCAN_A_RX_HANDLER_ALIAS(11);
-FLEXCAN_A_RX_HANDLER_ALIAS(12);
-FLEXCAN_A_RX_HANDLER_ALIAS(13);
-FLEXCAN_A_RX_HANDLER_ALIAS(14);
-FLEXCAN_A_RX_HANDLER_ALIAS(15);
-
-#undef FLEXCAN_A_RX_HANDLER_ALIAS
-
 extern "C" int main()
 {
 	asm("wrteei 0");
 
-	MPC5566SystemClockService systemClock(8000000U, 128000000U);
-	E78::E78SPISystem spiSystem(systemClock);
+	MPC55xxSystemClockService::Initialize(8000000U, 128000000U);
+	E78::E78SPISystem spiSystem;
 	spiSystem.ON20845.SendOutputConfiguration();
 	spiSystem.DelphiDigitalOutputs.InitPin(4U, Out);
 	spiSystem.DelphiDigitalOutputs.WritePin(4U, true);
@@ -133,12 +100,10 @@ extern "C" int main()
 		EQADC,
 		5.0F);
 
-	volatile FLEXCAN2_tag* canModules[] = {&CAN_A};
-	const CANBaudRate canBaudRates[] = {CANBaudRate::Kbps500};
-	MPC5xxxFlexCAN2Service canService(canModules, canBaudRates, 1U);
-	ICommunicationService* const isotp = canService.GetISOTPService(
-		{0x7E0U, 0U},
-		{0x7E8U, 0U});
+	const uint8_t busNumber = MPC5xxxFlexCAN2Service::Initialize(CAN_A, CANBaudRate::Kbps500);
+	ICommunicationService* const isotp = MPC5xxxFlexCAN2Service::Instance().GetISOTPService(
+		{0x7E0U, busNumber},
+		{0x7E8U, busNumber});
 	const E78::UDSMemoryRegion udsReadRegions[] = {
 		{0x00000000U, 0x00003FE0U, true},
 		{0x00004000U, 0x0001BFE0U, true},
@@ -158,7 +123,6 @@ extern "C" int main()
 		WriteToFlash,
 		ExitToBootloaderUploadRoutine);
 
-	canServiceForInterrupts = &canService;
 	CAN_A.IMRH.R = 0U;
 	CAN_A.IMRL.R = 0U;
 	CAN_A.CR.B.BOFFMSK = 0U;
@@ -174,7 +138,10 @@ extern "C" int main()
 	{
 		INTC.PSR[vector].R = FlexCANInterruptPriority;
 	}
-	CAN_A.IMRL.R = 0x0000FFFFU;
+	INTC.PSR[FlexCANARxHighVector].R = FlexCANInterruptPriority;
+	INTC.PSR[FlexCANATxHighVector].R = FlexCANInterruptPriority;
+	CAN_A.IMRL.R = 0xFFFFFFFFU;
+	CAN_A.IMRH.R = 0xFFFFFFFFU;
 	asm volatile(
 		"mbar\n"
 		"wrteei 1\n"

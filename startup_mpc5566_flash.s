@@ -112,6 +112,12 @@ BssInitialized:
 	lis	r2, _SDA2_BASE_@h
 	ori	r2, r2, _SDA2_BASE_@l
 
+	;# Run C/C++ static initialization only after writable memory, the stack,
+	;# and the EABI small-data bases are ready. __init handles this toolchain's
+	;# legacy .ctors entries; the explicit array walks also support objects
+	;# emitted through the modern preinit_array/init_array ABI.
+	bl	RunGlobalConstructors
+
 	;# Install the e200z6 IVORs and select MPC5566 INTC hardware-vector mode.
 	;# This also clears all inherited INTC priorities and leaves MSR[EE] clear.
 	bl	InitializeHardwareInterrupts
@@ -131,6 +137,59 @@ CopyInitializedBytesLoop:
 	lbzu	r6, 1(r4)
 	stbu	r6, 1(r5)
 	bdnz	CopyInitializedBytesLoop
+	blr
+
+RunGlobalConstructors:
+	stwu	r1, -16(r1)
+	mflr	r0
+	stw	r0, 20(r1)
+
+	lis	r3, __preinit_array_start@h
+	ori	r3, r3, __preinit_array_start@l
+	lis	r4, __preinit_array_end@h
+	ori	r4, r4, __preinit_array_end@l
+	bl	CallFunctionArray
+
+	;# Supplied by the PowerPC runtime. Among other runtime initialization,
+	;# this invokes the legacy .ctors list in its required reverse order.
+	bl	__init
+
+	lis	r3, __init_array_start@h
+	ori	r3, r3, __init_array_start@l
+	lis	r4, __init_array_end@h
+	ori	r4, r4, __init_array_end@l
+	bl	CallFunctionArray
+
+	lwz	r0, 20(r1)
+	mtlr	r0
+	addi	r1, r1, 16
+	blr
+
+;# Call each non-null function pointer in the half-open range [r3, r4).
+CallFunctionArray:
+	stwu	r1, -24(r1)
+	mflr	r0
+	stw	r0, 28(r1)
+	stw	r30, 16(r1)
+	stw	r31, 20(r1)
+	mr	r30, r3
+	mr	r31, r4
+CallFunctionArrayLoop:
+	cmplw	r30, r31
+	beq	CallFunctionArrayComplete
+	lwz	r12, 0(r30)
+	addi	r30, r30, 4
+	cmpwi	r12, 0
+	beq	CallFunctionArrayLoop
+	mtctr	r12
+	bctrl
+	b	CallFunctionArrayLoop
+CallFunctionArrayComplete:
+	lwz	r30, 16(r1)
+	lwz	r31, 20(r1)
+	lwz	r0, 28(r1)
+	mtlr	r0
+	addi	r1, r1, 24
 	blr
 
 ;# Application callbacks exported to the resident bootloader through the

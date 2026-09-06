@@ -46,20 +46,19 @@ namespace
 
 namespace E78
 {
-	E78SPISystem::E78SPISystem(
-		const MPC5xxx::MPC5566SystemClockService& systemClock)
+	E78SPISystem::E78SPISystem()
 		: _on20845SPI(
 			  &DSPI_D,
 			  ON20845Configuration,
-			  systemClock.PeripheralClockHz()),
+			  MPC5xxx::MPC5xxxSystemClockService::Instance().PeripheralClockHz()),
 		  _mpmSPI(
 			  &DSPI_D,
 			  MPMConfiguration,
-			  systemClock.PeripheralClockHz()),
+			  MPC5xxx::MPC5xxxSystemClockService::Instance().PeripheralClockHz()),
 		  _delphi28046304SPI(
 			  &DSPI_B,
 			  DelphiConfiguration,
-			  systemClock.PeripheralClockHz()),
+			  MPC5xxx::MPC5xxxSystemClockService::Instance().PeripheralClockHz()),
 		  _delphiDigitalOutputService(
 			  &DSPI_A,
 			  &DSPI_C,
