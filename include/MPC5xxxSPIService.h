@@ -63,7 +63,6 @@ namespace MPC5xxx
 	private:
 		volatile DSPI_tag* const _dspi;
 		const MPC5xxxSPIServiceConfiguration _configuration;
-		const std::uint32_t _moduleClockHz;
 		SPIBusState* _bus = nullptr;
 		mutable SPIFrameTiming _cachedTiming = {};
 		mutable std::uint32_t _cachedClockTransferAttributes = 0U;
@@ -91,8 +90,7 @@ namespace MPC5xxx
 	public:
 		MPC5xxxSPIService(
 			volatile DSPI_tag* dspi,
-			const MPC5xxxSPIServiceConfiguration& configuration,
-			std::uint32_t moduleClockHz);
+			const MPC5xxxSPIServiceConfiguration& configuration);
 
 		bool Ready() override;
 

@@ -49,16 +49,13 @@ namespace E78
 	E78SPISystem::E78SPISystem()
 		: _on20845SPI(
 			  &DSPI_D,
-			  ON20845Configuration,
-			  MPC5xxx::MPC5xxxSystemClockService::Instance().PeripheralClockHz()),
+			  ON20845Configuration),
 		  _mpmSPI(
 			  &DSPI_D,
-			  MPMConfiguration,
-			  MPC5xxx::MPC5xxxSystemClockService::Instance().PeripheralClockHz()),
+			  MPMConfiguration),
 		  _delphi28046304SPI(
 			  &DSPI_B,
-			  DelphiConfiguration,
-			  MPC5xxx::MPC5xxxSystemClockService::Instance().PeripheralClockHz()),
+			  DelphiConfiguration),
 		  _delphiDigitalOutputService(
 			  &DSPI_A,
 			  &DSPI_C,

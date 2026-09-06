@@ -1,4 +1,5 @@
 #include "MPC5xxxSPIService.h"
+#include "MPC5xxxSystemClockService.h"
 
 #include <new>
 #include <utility>
@@ -146,14 +147,11 @@ namespace MPC5xxx
 
 	MPC5xxxSPIService::MPC5xxxSPIService(
 		volatile DSPI_tag* dspi,
-		const MPC5xxxSPIServiceConfiguration& configuration,
-		std::uint32_t moduleClockHz)
+		const MPC5xxxSPIServiceConfiguration& configuration)
 		: _dspi(dspi),
-		  _configuration(configuration),
-		  _moduleClockHz(moduleClockHz)
+		  _configuration(configuration)
 	{
 		if (dspi == nullptr || configuration.chipSelect > kMaximumChipSelect ||
-			moduleClockHz == 0U ||
 			configuration.clockSpeedHz == 0U ||
 			configuration.bitsPerWord < 4U ||
 			configuration.bitsPerWord > 16U)
@@ -185,6 +183,7 @@ namespace MPC5xxx
 
 		std::uint32_t bestBaudError = 0xFFFFFFFFU;
 		std::uint32_t baudFields = 0U;
+		const std::uint32_t peripheralClockHz = MPC5xxx::MPC5xxxSystemClockService::PeripheralClockHz();
 		for (std::uint32_t doubleBaud = 0U; doubleBaud <= 1U; ++doubleBaud)
 		{
 			for (std::uint32_t prescaler = 0U; prescaler < 4U; ++prescaler)
@@ -192,7 +191,7 @@ namespace MPC5xxx
 				for (std::uint32_t scaler = 0U; scaler < 16U; ++scaler)
 				{
 					const std::uint32_t actual =
-						(_moduleClockHz * (doubleBaud + 1U)) /
+						(peripheralClockHz * (doubleBaud + 1U)) /
 						(kBaudPrescalers[prescaler] * kBaudScalers[scaler]);
 					const std::uint32_t error =
 						actual > _configuration.clockSpeedHz
@@ -211,13 +210,13 @@ namespace MPC5xxx
 
 		const EncodedDelay chipSelectToClock = EncodeDelay(
 			timing.chipSelectToClockNanoseconds,
-			_moduleClockHz);
+			peripheralClockHz);
 		const EncodedDelay afterClock = EncodeDelay(
 			timing.afterClockNanoseconds,
-			_moduleClockHz);
+			peripheralClockHz);
 		const EncodedDelay afterTransfer = EncodeDelay(
 			timing.afterTransferNanoseconds,
-			_moduleClockHz);
+			peripheralClockHz);
 
 		std::uint32_t attributes =
 			baudFields |
