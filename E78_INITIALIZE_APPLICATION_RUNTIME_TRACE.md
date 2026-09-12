@@ -18,7 +18,7 @@ descriptors, while their throttle-H-bridge board role is still an inference.
 | DSPI-D | Descriptor `0x18A <- 1` | `80 FC 00 00 00 00` | Sets Group 6 word bit 2; confirmed ignition-output gate enable |
 | DSPI-B | Identification, twice | `0E1B 0000` | Read ASIC silicon/revision class |
 | DSPI-B | Main initialization | 19 words, revision dependent | Load ASIC configuration table |
-| DSPI-B | Revision-3 prefix | `CF4C 25B7 16EC 0011` | Sent only for class 3 |
+| DSPI-B | Revision-3 preconditioning burst | 19 words: `CF4C 25B7 16EC 0034`, followed by fifteen `0000` words | Sent only for class 3 after the normal class-3 table |
 | DSPI-B | Later identification | `0E1B 0000` | Refresh and cache revision bits |
 | DSPI-D | Later Group 4 transfer | `00 00 00 00 00 00` initially | 22-bit/request group; no startup bit is set here |
 
@@ -261,8 +261,9 @@ starts the controller.  Only B and D have live protocol traffic in this image.
 35. Initialize selector 11 opcode `011F` for the rotating/protected query.
 36. Initialize selector 1 to `0F17 0080 0080`.
 37. Initialize selector 6 opcode `0F14`; its data word is filled later.
-38. Initialize selector 9 opcode `0215` (the passed `0x26` is masked by the
-    wrapper before choosing bank 0).
+38. Initialize selector 9 wire command `0255 0013`. The first word is the
+    event-count query and the returned low byte is compared with expected count
+    `0x13`.
 39. Initialize selector 10 opcode `0F12`.
 40. Initialize selector 4 from the class-3 or class-4 ROM default (`0F1D`).
 41. Install DSPI interrupt/DMA routing state for controller slots 0 and 2 and
@@ -276,7 +277,9 @@ starts the controller.  Only B and D have live protocol traffic in this image.
 
     Class 3:
     `CF4C 25B7 16EC 0011 1E10 1E11 1331 3030 0000 3E00 0013 FB82 0080 0080 0000 0000 0000 0000 0541`
-45. If class 3, send selector 13 prefix `CF4C 25B7 16EC 0011`.
+45. If class 3, send the selector 13 preconditioning burst:
+    `CF4C 25B7 16EC 0034`, followed by fifteen `0000` words. This is a complete
+    19-word transaction, not a four-word prefix.
 46. Set DSPI-D descriptor `0x18A` to 1.  It is bank 0, active-high, Group 6,
     bit 2; the payload changes from `80F8` to `80FC` and the routine sends
     `80 FC 00 00 00 00` immediately.

@@ -1,5 +1,5 @@
-#ifndef MPC5XXX_DSI_SERIAL_OUTPUT_SERVICE_H
-#define MPC5XXX_DSI_SERIAL_OUTPUT_SERVICE_H
+#ifndef DELPHIDSIDIGITALSERVICE_H
+#define DELPHIDSIDIGITALSERVICE_H
 
 #include "IDigitalService.h"
 #include "MPC5xxx.h"
@@ -14,7 +14,7 @@ namespace MPC5xxx
 	 * This is a continuously repeated output rather than a full-duplex SPI
 	 * transaction, so it intentionally does not implement ISPIService.
 	 */
-	class MPC5xxxDSISerialOutputService final
+	class DelphiDSIDigitalService final
 		: public EmbeddedIOServices::IDigitalService
 	{
 	private:
@@ -22,9 +22,10 @@ namespace MPC5xxx
 		volatile DSPI_tag* const _clockingModule;
 		const std::uint32_t _outputMask;
 		volatile std::uint32_t _value = 0U;
+		bool _started = false;
 
 	public:
-		MPC5xxxDSISerialOutputService(
+		DelphiDSIDigitalService(
 			volatile DSPI_tag* leadingModule,
 			volatile DSPI_tag* clockingModule,
 			std::uint32_t leadingModuleConfiguration,
@@ -35,6 +36,7 @@ namespace MPC5xxx
 			std::uint32_t outputMask,
 			std::uint32_t initialValue);
 
+		void Start();
 		void Set(std::uint32_t value);
 		std::uint32_t Value() const { return _value; }
 

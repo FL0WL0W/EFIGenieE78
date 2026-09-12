@@ -1,8 +1,4 @@
-#include "E78SPISystem.h"
-#include "MPC5xxxAnalogService.h"
-#include "MPC5xxxDigitalService.h"
-#include "MPC5xxxFlexCAN2Service.h"
-#include "MPC55xxSystemClockService.h"
+#include "E78System.h"
 #include "UDSService.h"
 
 #include <cstddef>
@@ -26,20 +22,32 @@ extern "C" __attribute__((weak)) bool WriteToFlash(
 
 namespace
 {
-	constexpr std::uint32_t LoopPeriodTimebaseTicks = 0x00080000U;
-	constexpr std::uint32_t IgnitionTogglePeriodTimebaseTicks = 0x0004E200U;
-	constexpr std::uint32_t IgnitionToggleWaitToCaptureTimebaseTicks = 0x0002E200U;
-	constexpr std::uint32_t AnalogDetectionPeriodTimebaseTicks = 0x00F42400U;
-	constexpr analogpin_t FirstAnalogChannel = 64U;
-	constexpr std::size_t AnalogChannelCount = 32U;
-	constexpr float MinimumCorrelatedVoltageChange = 0.20F;
-	constexpr digitalpin_t FirstInjectorPin = 132U;
-	constexpr digitalpin_t FirstIgnitionPin = 167U;
-	constexpr std::size_t EngineOutputCount = 6U;
-	constexpr std::uint16_t FlexCANARxVectorFirst = 155U;
-	constexpr std::uint16_t FlexCANARxHighVector = 171U;
-	constexpr std::uint16_t FlexCANATxHighVector = 172U;
-	constexpr std::uint8_t FlexCANInterruptPriority = 1U;
+	constexpr std::uint32_t LoopPeriodTimebaseTicks = 384000;
+	// At a 32 MHz timebase this produces an intentionally slow 100-baud UART.
+	// One 9N1 word therefore takes 110 ms. Every output transmits its complete
+	// connector-pin encoding simultaneously, followed by a 500 ms idle period.
+	constexpr std::uint32_t UARTBitTimebaseTicks = 320000U;
+	constexpr std::uint32_t UARTInterPinTimebaseTicks = 16000000U;
+
+	// Every connector pin supported as an output by E78DigitalService. This
+	// includes direct MCU GPIO/eTPU pads, the 21 Delphi DSI outputs, and the
+	// three Delphi outputs carried in the DSPI-B status command.
+	constexpr digitalpin_t OutputList[] = {
+		// X1
+		114U, 127U, 128U, 140U, 141U, 147U, 150U,
+		151U, 152U, 153U, 154U, 155U, 156U,
+		// X2
+		201U, 202U, 203U, 204U, 205U, 206U, 207U,
+		208U, 209U, 210U, 211U, 212U, 214U, 215U,
+		216U, 217U, 218U, 232U, 233U, 234U, 252U,
+		253U, 254U, 255U, 272U,
+		// X3
+		303U, 304U, 305U, 306U, 307U, 308U, 309U,
+		310U, 311U, 312U, 313U, 314U, 315U, 316U,
+		317U, 332U,
+	};
+	constexpr size_t OutputCount = sizeof(OutputList) / sizeof(OutputList[0]);
+
 	std::uint32_t ReadTimebase()
 	{
 		std::uint32_t value;
@@ -58,52 +66,90 @@ namespace
 			: "r"(watchdogService)
 			: "memory");
 	}
+
+	struct SlowUARTSweep
+	{
+		std::uint8_t frameBit = 0U;
+		bool transmitting = false;
+		std::uint32_t deadline = 0U;
+	};
+
+	void BeginUARTFrame(
+		SlowUARTSweep& sweep,
+		IDigitalService& digitalService,
+		std::uint32_t now)
+	{
+		for (size_t pin = 0U; pin < OutputCount; ++pin)
+		{
+			// Establish idle high for a complete bit time before emitting the
+			// start bit so the decoder can establish valid UART framing.
+			digitalService.WritePin(OutputList[pin], true);
+			digitalService.InitPin(OutputList[pin], Out);
+		}
+		sweep.frameBit = 0xFFU; // pre-frame idle-high interval
+		sweep.transmitting = true;
+		sweep.deadline = now + UARTBitTimebaseTicks;
+	}
+
+	void ServiceUARTSweep(
+		SlowUARTSweep& sweep,
+		IDigitalService& digitalService,
+		std::uint32_t now)
+	{
+		if (static_cast<std::int32_t>(now - sweep.deadline) < 0) return;
+
+		if (!sweep.transmitting)
+		{
+			BeginUARTFrame(sweep, digitalService, now);
+			return;
+		}
+
+		if (sweep.frameBit == 0xFFU)
+		{
+			for (size_t pin = 0U; pin < OutputCount; ++pin)
+				digitalService.WritePin(OutputList[pin], false); // start bit
+			sweep.frameBit = 0U;
+			sweep.deadline += UARTBitTimebaseTicks;
+			return;
+		}
+
+		++sweep.frameBit;
+		if (sweep.frameBit <= 9U)
+		{
+			for (size_t pin = 0U; pin < OutputCount; ++pin)
+			{
+				// UART sends the full connector-pin encoding LSB first. Nine
+				// data bits represent every X1, X2, and X3 connector pin.
+				const std::uint16_t value = OutputList[pin];
+				digitalService.WritePin(
+					OutputList[pin],
+					((value >> (sweep.frameBit - 1U)) & 1U) != 0U);
+			}
+			sweep.deadline += UARTBitTimebaseTicks;
+			return;
+		}
+
+		if (sweep.frameBit == 10U)
+		{
+			for (size_t pin = 0U; pin < OutputCount; ++pin)
+				digitalService.WritePin(OutputList[pin], true); // stop bit
+			sweep.deadline += UARTBitTimebaseTicks;
+			return;
+		}
+
+		sweep.transmitting = false;
+		sweep.deadline = now + UARTInterPinTimebaseTicks;
+	}
 }
 
 extern "C" int main()
 {
 	asm("wrteei 0");
 
-	MPC55xxSystemClockService::Initialize(8000000U, 128000000U);
-	E78::E78SPISystem spiSystem;
-	spiSystem.ON20845.SendOutputConfiguration();
-	spiSystem.DelphiDigitalOutputs.InitPin(4U, Out);
-	spiSystem.DelphiDigitalOutputs.WritePin(4U, true);
-	spiSystem.Delphi28046304.RequestIdentification(nullptr);
-	spiSystem.Delphi28046304.RequestIdentification(nullptr);
-	spiSystem.Delphi28046304.SendRevision4Configuration(nullptr);
-	spiSystem.Delphi28046304.SendCommand(0x0F1AU, 0x0082U, nullptr);
-	spiSystem.Delphi28046304.SendCommand(0x0F1DU, 0x1450U, nullptr);
-	spiSystem.Delphi28046304.SendCommand(0x0F1DU, 0x04F0U, nullptr);
-	spiSystem.Delphi28046304.RequestDiagnostic(nullptr);
-	spiSystem.Delphi28046304.SendCommand(0x0F14U, 0x3E20U, nullptr);
-	MPC5xxxDigitalService digitalService;
-	for (std::size_t channel = 0U; channel < EngineOutputCount; ++channel)
-	{
-		const digitalpin_t injector = static_cast<digitalpin_t>(
-			FirstInjectorPin + channel);
-		const digitalpin_t ignition = static_cast<digitalpin_t>(
-			FirstIgnitionPin + channel);
-		digitalService.WritePin(injector, false);
-		digitalService.WritePin(ignition, false);
-		digitalService.InitPin(injector, Out);
-		digitalService.InitPin(ignition, Out);
-	}
-	// E78 routes the eQADC external-multiplexer address outputs MA0-MA2 to
-	// SIU pads 215-217. This board-level configuration does not belong in the
-	// generic MPC5xxx analog service.
-	SIU.PCR[215U].B.PA = 2U;
-	SIU.PCR[216U].B.PA = 2U;
-	SIU.PCR[217U].B.PA = 2U;
-	SIU.PCR[217U].B.WPE = 0U;
-	MPC5xxxAnalogService analogService(
-		EQADC,
-		5.0F);
+	E78::E78System system;
+	system.Initialize();
 
-	const uint8_t busNumber = MPC5xxxFlexCAN2Service::Initialize(CAN_A, CANBaudRate::Kbps500);
-	ICommunicationService* const isotp = MPC5xxxFlexCAN2Service::Instance().GetISOTPService(
-		{0x7E0U, busNumber},
-		{0x7E8U, busNumber});
+	ICommunicationService* const isotp = system.ISOTPService;
 	const E78::UDSMemoryRegion udsReadRegions[] = {
 		{0x00000000U, 0x00003FE0U, true},
 		{0x00004000U, 0x0001BFE0U, true},
@@ -123,25 +169,6 @@ extern "C" int main()
 		WriteToFlash,
 		ExitToBootloaderUploadRoutine);
 
-	CAN_A.IMRH.R = 0U;
-	CAN_A.IMRL.R = 0U;
-	CAN_A.CR.B.BOFFMSK = 0U;
-	CAN_A.CR.B.ERRMSK = 0U;
-	CAN_A.CR.B.TWRNMSK = 0U;
-	CAN_A.CR.B.RWRNMSK = 0U;
-	CAN_A.MCR.B.WRNEN = 0U;
-	CAN_A.IFRH.R = 0xFFFFFFFFU;
-	CAN_A.IFRL.R = 0xFFFFFFFFU;
-	for (std::uint16_t vector = FlexCANARxVectorFirst;
-		vector < FlexCANARxVectorFirst + 16U;
-		++vector)
-	{
-		INTC.PSR[vector].R = FlexCANInterruptPriority;
-	}
-	INTC.PSR[FlexCANARxHighVector].R = FlexCANInterruptPriority;
-	INTC.PSR[FlexCANATxHighVector].R = FlexCANInterruptPriority;
-	CAN_A.IMRL.R = 0xFFFFFFFFU;
-	CAN_A.IMRH.R = 0xFFFFFFFFU;
 	asm volatile(
 		"mbar\n"
 		"wrteei 1\n"
@@ -152,84 +179,15 @@ extern "C" int main()
 
 	const std::uint8_t alive = 0x99U;
 	isotp->Send(&alive, 1U);
-	uint32_t misses[AnalogChannelCount] = {};
-    uint32_t checks = 0;
-	bool injectorOutputState = false;
-	bool ignitionOutputState = false;
 	std::uint32_t loopStart = ReadTimebase();
-	std::uint32_t ignitionToggleStart = loopStart;
-	std::uint32_t analogWindowStart = loopStart;
+	SlowUARTSweep uartSweep;
+	uartSweep.deadline = loopStart + UARTInterPinTimebaseTicks;
 	while (true)
 	{
-		spiSystem.Service();
+		system.Service();
 
 		const std::uint32_t now = ReadTimebase();
-
-		if (static_cast<std::uint32_t>(now - ignitionToggleStart) >=
-			IgnitionToggleWaitToCaptureTimebaseTicks)
-        {
-            for (std::size_t channelIndex = 0U;
-                channelIndex < AnalogChannelCount;
-                ++channelIndex)
-            {
-                const analogpin_t channel = static_cast<analogpin_t>(
-                    FirstAnalogChannel + channelIndex);
-                const float voltage = analogService.ReadPin(
-                    channel);
-				// Keep the cooperative DSPI FIFOs supplied during the polling ADC
-				// scan. In particular, an MPM packet is longer than DSPI's four-entry
-				// hardware FIFO.
-				spiSystem.Service();
-                if (ignitionOutputState)
-                {
-                    if(voltage < 2.5F)
-                        ++misses[channelIndex];
-                }
-                else
-                {
-                    if(voltage > 2.5F)
-                        ++misses[channelIndex];
-                }
-            }
-            checks++;
-        }
-
-		if (static_cast<std::uint32_t>(now - analogWindowStart) >=
-			AnalogDetectionPeriodTimebaseTicks)
-		{
-			analogWindowStart = now;
-			for (std::size_t channelIndex = 0U;
-				channelIndex < AnalogChannelCount;
-				++channelIndex)
-			{
-                uint8_t missPercent = (misses[channelIndex] * 100) / checks;
-				if (missPercent < 5 && isotp->Ready())
-				{
-					const std::uint8_t detection[] = {
-						0xA0U,
-						static_cast<std::uint8_t>(
-							FirstAnalogChannel + channelIndex),
-					};
-					isotp->Send(detection, sizeof(detection));
-				}
-
-				misses[channelIndex] = 0U;
-			}
-            checks = 0;
-		}
-
-		if (static_cast<std::uint32_t>(now - ignitionToggleStart) >=
-			IgnitionTogglePeriodTimebaseTicks)
-		{
-			ignitionToggleStart = now;
-			ignitionOutputState = !ignitionOutputState;
-			for (std::size_t channel = 0U; channel < EngineOutputCount; ++channel)
-			{
-				digitalService.WritePin(
-					static_cast<digitalpin_t>(FirstIgnitionPin + channel),
-					ignitionOutputState);
-			}
-		}
+		ServiceUARTSweep(uartSweep, system.DigitalService, now);
 
 		if (static_cast<std::uint32_t>(now - loopStart) <
 			LoopPeriodTimebaseTicks)
@@ -237,13 +195,6 @@ extern "C" int main()
 
 		loopStart = now;
 		ServiceCoreWatchdog();
-		spiSystem.ServiceWatchdogs();
-		injectorOutputState = !injectorOutputState;
-		for (std::size_t channel = 0U; channel < EngineOutputCount; ++channel)
-		{
-			digitalService.WritePin(
-				static_cast<digitalpin_t>(FirstInjectorPin + channel),
-				injectorOutputState);
-		}
+		system.ServiceWatchdogs();
 	}
 }

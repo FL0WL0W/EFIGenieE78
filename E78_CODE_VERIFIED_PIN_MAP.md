@@ -103,7 +103,7 @@ muxed but has no corresponding active channel object.
 | 152–157 | B5–B10 | Six initialized pulse/frequency measurement inputs | Confirmed function; unknown nets |
 | 163–166 | B16–B19 | Four initialized special-event/timing channels | Confirmed function; unknown nets |
 | 175 | B28 | Initialized timed input/event channel | Confirmed function; unknown net |
-| 160 | B29 or GPIO160 | Runtime-muxed between eTPU-B29 and SIU GPIO with input/readback enabled | Confirmed function; unknown net |
+| 160 | B29 or GPIO160 | Runtime-muxed between eTPU-B29 and SIU GPIO with input/readback enabled | FSE enable pull-up/control; bench confirmed |
 | 177–178 | B30–B31 | Two eTPU inputs read by a shared selector helper and diagnostics | Confirmed function; unknown nets |
 | 130 | A16 or GPIO130 | Runtime-muxed GPIO input/eTPU-A16 input | Confirmed function; unknown net |
 | 146 | TCRCLKB | Selected as the eTPU-B external time-base clock pad | Mux confirmed; external use unproven |
@@ -117,7 +117,7 @@ is not muxed to it.
 
 | SIU pad | Channel | Hardware mode/use in code | Likely board role | Confidence |
 |---:|---:|---|---|---|
-| 185 | 6 | Dynamically commanded PWM output | Cam-phaser solenoid 1 | Strong inference |
+| 185 | 6 | Dynamically commanded PWM output | X1-41 high-speed cooling-fan relay control | Bench confirmed |
 | 196 | 17 | Dynamically commanded PWM output | Cam-phaser solenoid 2 | Strong inference |
 | 199 | 20 | Dynamically commanded PWM output | Cam-phaser solenoid 3 | Strong inference |
 | 201 | 22 | Dynamically commanded PWM output | Cam-phaser solenoid 4 | Strong inference |
@@ -182,19 +182,20 @@ and IBE bits; it does not rely on stale symbol comments.
 | 119 | Output, first bit of a two-line selector | External 2-bit selector, unknown target |
 | 121 | Periodically sampled input | Unknown input net |
 | 130 | GPIO input or eTPU-A16 input, runtime muxed | Timed/discrete input, unknown net |
-| 143 | Bidirectional/readback GPIO object | Unknown net |
+| 122 | Input-only (`PCR=0x0110`) | FSE enable monitor (bench confirmed) |
+| 143 | Bidirectional/readback GPIO object | X1-27 starter-enable relay control (bench confirmed) |
 | 159 | Bidirectional/readback GPIO object | Unknown net |
-| 160 | Bidirectional GPIO or eTPU-B29, runtime muxed | Timed/discrete signal, unknown net |
+| 160 | Bidirectional GPIO or eTPU-B29, runtime muxed | FSE enable pull-up/control (bench confirmed) |
 | 176 | Driven as second bit of the GPIO119/176 selector; readback enabled | External 2-bit selector, unknown target |
-| 180 | Bidirectional/readback GPIO object | Unknown net |
+| 180 | Bidirectional/readback GPIO object | X1-40 (bench confirmed; external function not yet verified) |
 | 182 | Bidirectional/readback GPIO object | Unknown net |
 | 187–188 | Two driven/readback control lines grouped with eMIOS23 PWM | Throttle H-bridge direction/control lines (strong inference) |
 | 191 | Bidirectional/readback GPIO object | Unknown net |
-| 197 | Bidirectional/readback GPIO object | Unknown net |
+| 197 | Bidirectional/readback GPIO object | X1-28 primary fuel-pump relay control (bench confirmed) |
 | 203 | Input used with AN30 and GPIO92 | Hardware variant/classification strap |
 | 205 | Static output initialized high; object is registered in the initialization image but has no runtime caller | Unproven output/enable candidate |
 
-GPIO115, 116, 117, 122, 123, 204, and (after initial registration) 205 have
+GPIO115, 116, 117, 123, 204, and (after initial registration) 205 have
 descriptors/static PCR settings but no runtime code references.  They remain
 template/unproven.  Other GPIO-looking PCR entries without a referenced object,
 direct GPDI/GPDO access, or peripheral role are also not counted as board use.

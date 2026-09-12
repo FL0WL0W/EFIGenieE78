@@ -5,10 +5,10 @@ MPC5566-based E78 ECM. It covers the physical interface, transaction table,
 every known message, call sites, revision handling, periodic scheduling,
 diagnostic decoding, observed responses, and the current kernel experiments.
 
-The peripheral on the other end of DSPI-B is called the **DSPI-B ASIC** here.
-Its exact part number and internal register names are not known. Names such as
-"control," "mode," and "diagnostic" describe observed software behavior rather
-than official vendor terminology.
+The peripheral on the other end of DSPI-B is the Delphi **C2MIO** ASIC, marked
+`28046304` on the E78 hardware. Internal register names remain proprietary, so
+names such as "control," "mode," and "diagnostic" describe observed software
+behavior rather than official vendor terminology.
 
 ## Confidence notation
 
@@ -80,16 +80,16 @@ these.
 | 1 | 3 | `0F17 0080 0080` | Driver/API; no direct caller proven | Two-channel parameter/control register |
 | 2 | 2 | `0F19 xxxx` | Driver capability only | One 7-bit configurable parameter |
 | 3 | 2 | `0F1A xxxx` | Conditional live | Two packed 6-bit control fields |
-| 4 | 2 | `0F1D xxxx` | Driver capability only | Revision-dependent control register |
+| 4 | 2 | `0F1D xxxx` | Confirmed startup | Revision-dependent analog-front-end/test-routing control |
 | 5 | 2 | `0F1C xxxx` | Driver capability only | Additional control register |
 | 6 | 2 | `0F14 xxxx` | Confirmed live | Main operating mode and heartbeat |
 | 7 | 4 | `0B01 0000 0000 1FC0` | Confirmed cyclic | Status query/readback |
 | 8 | 2 | `0E1B 0000` | Confirmed startup | Identification and silicon revision |
-| 9 | 2 | `0215 0013` | API present; runtime call unproven | Counter/status query |
-| 10 | 3 | `0F12 xxxx xxxx` | Driver capability only | Twelve packed two-bit channel-group modes |
+| 9 | 2 | `0255 0013` | API present; runtime call unproven | Event-count snapshot/query |
+| 10 | 3 | `0F12` or `0F52`, then two words | `0F52` confirmed startup/runtime; `0F12` API path | Twelve packed two-bit diagnostic-qualification modes |
 | 11 | 2 | alternating `011F xxxx` / `0F00 xxxx` | Confirmed cyclic | Protected rotating diagnostic query |
 | 12 | 9 | `835F` plus eight `0000` words | Confirmed cyclic | Bulk diagnostic read for 54 logical channels |
-| 13 | 4 | `CF4C 25B7 16EC 0011` | Revision-3 startup only | Extra revision-3 initialization prefix |
+| 13 | 19 | `CF4C 25B7 16EC 0034`, then fifteen zero words | Revision-3 startup only | Revision-3 preconditioning/clear burst |
 | 14 | 3 | `0804/0806/0808/080A xxxx xxxx` | Driver capability; no live E78 caller proven | Four programmable channel/timing banks |
 
 ## Selector 0: main revision-dependent initialization
@@ -116,10 +116,104 @@ The message is sent by `ExecuteDSPIBAsicTransactionBySelector(0, 0)` during
 application hardware initialization in the call chain rooted at
 `InitializeApplicationRuntime` and `FUN_000B78EC`.
 
-The table resembles a sequential ASIC register/configuration download. The
-individual word meanings are not known. Words that later appear as standalone
-control defaults strongly suggest that this block seeds multiple internal ASIC
-registers in one transaction.
+This is a sequential register download, not merely a resemblance. `CF4C` is the
+burst-write header and the following 18 words seed C2MIO register slots
+`0x4C..0x5D`. Standalone commands later address the same slots: `0F4C`, `0F52`,
+`0F14/0F54`, `0F17/0F57`, `0F19/0F59`, and `0F1D/0F5D`. Bit 6 in the low command
+byte distinguishes related command forms, so standalone traffic often displays
+the address with that bit clear.
+
+The recovered layout is:
+
+| Table word | Register | E78 rev-4 value | Recovered role |
+|---:|---:|---:|---|
+| 1 | header | `CF4C` | Burst write starting at register `0x4C` |
+| 2 | `4C` | `25B7` | Platform-specific packed configuration A |
+| 3 | `4D` | `16EC` | Platform-specific packed configuration B |
+| 4 | `4E` | `0011` | Platform-specific packed configuration C; bits 4:2 have a standalone writer |
+| 5 | `4F` | `1E10` | Platform-specific packed configuration D |
+| 6 | `50` | `1E11` | Platform-specific packed configuration E |
+| 7 | `51` | `1331` | Platform-specific packed configuration F |
+| 8 | `52` | `7575` | Two-bit diagnostic qualification for groups 1..8 |
+| 9 | `53` | `0055` | Two-bit diagnostic qualification for groups 9..12 |
+| 10 | `54` | `3E00` | Operating-control/heartbeat register |
+| 11 | `55` | `0013` | Counter-related configuration; queried by on-wire command `0255` |
+| 12 | `56` | `FB82` | Diagnostic decoding/policy fields |
+| 13 | `57` | `0080` | Configurable seven-bit field A plus control bit |
+| 14 | `58` | `0080` | Configurable seven-bit field B plus control bit |
+| 15 | `59` | `0A80` | DSI serial-input bit count plus a quantized timing/alignment field |
+| 16..18 | `5A..5C` | `0000` | Unknown/reserved in E78 and E92 |
+| 19 | `5D` | `00F0` | Revision-dependent analog-front-end/test-routing control |
+
+Registers `4C..51` are six packed configuration words. Earlier analysis split
+them into twelve bytes and called those bytes channel-group descriptors. That
+interpretation is **not proven** and has been withdrawn. The one recovered API
+for this region sends `0F4C` followed by cached R4C, R4D, and R4E, then replaces
+only R4E bits `4:2` from a three-bit argument. Nothing in that operation
+establishes byte boundaries or a one-byte-per-group layout.
+
+For E78 rev 4, the six words are:
+
+```text
+25B7 16EC 0011 1E10 1E11 1331
+```
+
+For E92 rev 4, they are:
+
+```text
+2DAB 4653 0009 1FAF 3000 15C2
+```
+
+The population evidence strongly rules out a simple output-enable bitmap. All
+examined E92 V6 and V8 images use the same six words despite having different
+numbers of ignition/injector channels, and E78 I4 and V8 images likewise use
+the same words. The values are much more likely ASIC platform/topology,
+protection, or diagnostic configuration. R4E bits `4:2` are a definite field,
+but the firmware contains no proven caller of its standalone writer, so even
+that field's physical meaning remains unknown.
+
+### Runtime mutation audit
+
+Tracing every direct reference to the cached `0x4C..0x5D` image narrows the
+unknown region further:
+
+| Registers | Post-load firmware access |
+|---|---|
+| `4C..4E` | One dormant three-register transmit path; only R4E bits `4:2` are replaced |
+| `4F..51` | No individual reader or writer found; transmitted only in the initialization burst |
+| `52..53` | Read and rewritten as packed two-bit diagnostic qualification modes |
+| `54` | Runtime operating state and bit-10 heartbeat |
+| `55` | Used by the event-count query/validation path |
+| `56` | Consulted by the 54-channel diagnostic decoder |
+| `57..58` | Field accessors and returned-status accessors exist |
+| `59` | DSI width and quantized timing/alignment accessors exist |
+| `5A..5C` | No individual reader or writer found; zero in both controller families |
+| `5D` | Runtime analog-front-end/test routing |
+
+Six 16-bit words contain 96 bits, so a packing of 32 three-bit channel modes is
+arithmetically possible. The firmware evidence argues against adopting that
+interpretation: the only known three-bit update is R4E bits `4:2`, which does
+not align with a continuous three-bit stream beginning at R4C, the words do not
+vary with cylinder/output population, and no channel-indexing accessor exists.
+Until another table variant or a live caller is found, these six words should
+be treated as opaque platform configuration.
+
+### Cross-platform image survey
+
+The complete table was compared across the locally available production
+images, including E78 I4/V8 and E92 V6/V8 applications from model years
+2014–2020. Each controller family has one stable platform table. E92 changes
+only R59's low field at the 2014/2015 generation boundary:
+
+```text
+E92 MY2014:  R59 = 0803
+E92 MY2015+: R59 = 0805
+```
+
+The DSI width field remains 16 in both cases. The low field therefore behaves
+like a board/silicon-generation timing trim rather than an output population
+or enable mask. No E92 engine or vehicle option in the available corpus changes
+R4C..R58 or R5A..R5D.
 
 ## Selector 8: identification and revision selection
 
@@ -158,18 +252,20 @@ The precise placement of this value within the two-word exchange should always
 be recorded along with the complete RX pair because SPI returns a word for every
 word transmitted.
 
-## Selector 13: revision-3-only prefix
+## Selector 13: revision-3-only preconditioning burst
 
 If the detected ASIC class is 3, `SendDSPIBRevision3Prefix` at `0x000C8D84`
-sends:
+sends this separate 19-word preconditioning burst:
 
 ```text
-CF4C 25B7 16EC 0011
+CF4C 25B7 16EC 0034 0000 0000 0000 0000 0000
+0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
 ```
 
-This is exactly four words. It is not a second 19-word initialization. An early
-kernel experiment incorrectly resent a full initialization block; that has been
-corrected.
+The copy loop at `0x000C8D84` copies all 19 words before dispatching selector
+13. It is not the normal revision-3 configuration table: only the first four
+words are nonzero, making it much more consistent with a preconditioning or
+clear operation before the main register image.
 
 ## Selector 6: operating mode and heartbeat
 
@@ -181,7 +277,7 @@ Base format:
 
 TX buffer: `0x4000C936`, labeled `g_awDSPIBSelector06Tx`.
 
-`InitializeDSPIBControl14Opcode` installs opcode `0x0F14`.
+`InitializeC2MIORegister54Command` installs opcode `0x0F14`.
 `FUN_0008291C` initializes control bits 8 through 13:
 
 | Bit | Initial value |
@@ -197,10 +293,16 @@ This produces the startup base value `0x3E00`.
 
 Runtime writers are:
 
-- `SetAndSendDSPIBControlBit4` at `0x000C8C44`.
-- `SetAndSendDSPIBModeField` at `0x000C8C60`.
+- `SetAndSendC2MIORegister54Bit4` at `0x000C8C44`.
+- `SetAndSendC2MIORegister54ModeBits5Through7` at `0x000C8C60`.
 - Callers at `0x0009B024`, `0x0009B068`, `0x000A84D8`, and
   `0x000DBCE8`.
+
+Bits `8..13` are six independently writable flags. Startup produces `3E00`
+(bit 8 clear; bits 9..13 set). The fast cyclic service specifically pulses bit
+10 low and then high on consecutive service counts 30 and 31, then resets its
+counter. Bit 10 is therefore the confirmed C2MIO heartbeat/keepalive toggle;
+the exact roles of bits 8, 9, and 11..13 remain unknown.
 
 Recovered startup/run sequence for this E78 calibration:
 
@@ -301,6 +403,20 @@ object callback.
 This is the source of the **54 received diagnostic channels**. It should not be
 confused with selector 10, which contains twelve packed two-bit transmit fields.
 
+Register 56 participates in this decoder rather than enabling outputs. Its
+known fields are:
+
+| Bits | Observed use |
+|---:|---|
+| `10:8` | Last channel index in a special low-numbered diagnostic region |
+| `5` | Enables that special-region exception |
+
+With the E78 value `FB82` (and E92 `FB8E`), bits `10:8` equal 3 but bit 5 is
+clear. Consequently the exception is disabled and all 54 channels follow the
+ordinary four-state decode. The remaining R56 bits are not decoded. This is
+additional evidence that R56 is diagnostic policy, not the missing output
+enable.
+
 ## Selector 3: conditional packed control
 
 Base message:
@@ -340,18 +456,22 @@ do not demonstrate that the ASIC performs crank decoding.
 
 ## Selector 9: counter/status query
 
-Message:
+Message as stored and sent:
 
 ```text
-0215 0013
+0255 0013
 ```
 
 ROM address: `0x000D334C`, labeled `g_awDSPIBCounterQueryRom`.
 
-`InitializeDSPIBCounterQuery` installs opcode `0x0215`. `FUN_000CAE38` sends
-selector 9 and uses its response while updating per-channel diagnostic state.
-No direct caller of `FUN_000CAE38` has been proven in this E78 image, so this is
-not classified as a confirmed periodic transaction.
+`InitializeC2MIORegister55Query` requests command address `0x15` while retaining
+bit 6 from the ROM template, producing `0x0255` on the wire. `FUN_000CAE38`
+first computes an expected event count, adds one, sends selector 9, and compares
+the returned low byte with that expected count. A match or one-count difference
+sets the channel's diagnostic state before qualification continues. This makes
+R55 much more likely a counter seed/window or event-count configuration than an
+output enable. No direct caller of `FUN_000CAE38` has been proven in this E78
+image, so it is not classified as a confirmed periodic transaction.
 
 ## Selectors 1, 2, 4, and 5: standalone control registers
 
@@ -364,9 +484,24 @@ proven live E78 caller.
 0F17 0080 0080
 ```
 
-The driver maps logical IDs `0x68` and `0x69` to the two payload words. It can
-write a seven-bit value plus a control bit in each word. A function-table
-reference exists, but no direct E78 call site has been established.
+The driver maps logical IDs `0x68` and `0x69` to the two payload words. The
+recovered interface exposes these fields independently:
+
+| Bits | Firmware treatment |
+|---:|---|
+| `6:0` | Seven-bit quantity stored in units of 32; getters reconstruct `value * 32 + 15` |
+| `9:7` | Three-bit mode field |
+| `10` | Single control/enable field |
+
+The receive-side interface also extracts one returned status bit for each of
+the two logical channels. This method table parallels the selector-3 interface
+for logical IDs `0x6B/0x6C`, whose two six-bit values are stored in units of 64.
+That structural match makes R57/R58 much more consistent with two special
+timed/capture/output channels than with generic analog mux selection. The exact
+physical nets and time unit remain unproven. The exposed API does not cover all
+16 bits: E92's R57 default is `1085`, proving that at least bit 12 also has a
+meaning not exposed by these recovered E78 accessors. Function-table references
+exist, but no direct E78 call site has been established.
 
 ### Selector 2
 
@@ -374,19 +509,51 @@ reference exists, but no direct E78 call site has been established.
 0F19 xxxx
 ```
 
-The low seven bits of the second word are configurable. The default is zero for
-ASIC class 3; the revision-4 initialization table contains the related value
-`0x0A80`. No live E78 transmitter has been proven.
+Register `59` has now been tied directly to the ASIC's DSI serial input:
 
-### Selector 4
+| Bits | Recovered role |
+|---:|---|
+| `11:7` | Number of useful DSI bits |
+| `6:0` | Value quantized in units of 32; probably DSI timing/alignment, exact meaning unknown |
+
+E78 stores `0x0A80`, so bits `11:7` equal decimal 21. That matches its measured
+and firmware-recovered DSI chain exactly: DSPI-C contributes 16 bits and the
+internally chained DSPI-A contributes five bits. E92 stores `0x0803` or
+`0x0805`, so the same field equals 16; its stock firmware configures DSPI-B
+CTAR0 with `FMSZ=15`, i.e. a 16-bit DSI frame, and enables DSI serialization on
+DSPI-B PCS2. The independent hardware configuration on both platforms makes
+the bit-count identification high confidence.
+
+The low-seven-bit values are zero on E78 and `3` or `5` across E92 software
+generations. Firmware setters scale this field in steps of 32, suggesting a
+delay, phase, or qualification interval associated with DSI reception. No live
+standalone E78 `0F19` transmitter has been proven; the startup burst still
+loads R59.
+
+### Selector 4 / register `5D`
 
 ```text
 ASIC class 3: 0F1D 0541
 ASIC class 4: 0F1D 00F0
 ```
 
-Several driver functions can modify individual fields, but their send wrappers
-have no proven E78 callers.
+This path is confirmed live. `RunDSPIBRevision4AnalogFrontendStartupTest` at
+`0x000A63F8` constructs and sends the observed transition exactly:
+
+```text
+0F1D 1450
+wait 20 microseconds
+read four eQADC paths
+0F1D 04F0
+```
+
+For revision 4 the firmware exposes fields at bits 12, 11, 10:8, 7, 6, 5, 4,
+3, 2, 1, and 0. The first command selects a test route/stimulus; after sampling,
+the code restores the normal route. E92 contains an independent implementation
+of the same sequence and four-channel ADC read. This is decisive evidence that
+table word 19 is a live analog-front-end/test-routing register and **not a CRC,
+checksum, or parity word**. Revision 3 uses a different encoding and skips this
+revision-4 startup test.
 
 ### Selector 5
 
@@ -399,10 +566,11 @@ wrappers likewise have no proven E78 callers.
 
 ## Selector 10: packed channel-group modes
 
-Format:
+Formats:
 
 ```text
-0F12 WORD1 WORD2
+0F12 WORD1 WORD2   per-group API form
+0F52 WORD1 WORD2   bulk register-52/53 form
 ```
 
 `FUN_000CA374` maps logical channel IDs 0 through 53 into twelve groups. Each
@@ -414,18 +582,26 @@ Important distinction:
 - Selector 10 can **write twelve two-bit group modes**.
 - Selector 12 **reads and decodes 54 diagnostic entries**.
 
-The selector-10 transmit wrapper `FUN_000CA6C0` has no direct caller, no function
-pointer reference, and no raw address reference in this E78 image. Therefore it
-is a shared-driver capability, not a confirmed stock E78 message.
+The selector-10 wrapper `FUN_000CA6C0` builds the `0F12` form and has no proven
+direct E78 caller. In contrast,
+`SendC2MIORegisters52And53DiagnosticQualification` at `0x000C8EDC` builds the
+captured `0F52` form from cached registers 52/53. The runtime updater at
+`0x000D59F8` changes group 2 (channels 9..16) between qualification modes based
+on engine-position/eTPU and output state, then transmits `0F52`.
 
-The kernel currently sends the experimental value:
+For revision 4, the two-bit codes map to software qualification counts:
 
 ```text
-0F12 FFFF 00FF
+mode 0 -> 4 samples
+mode 1 -> 8 samples
+mode 2 -> 15 samples
+mode 3 -> 46 samples
 ```
 
-This sets all twelve packed modes to 3. It did not enable the injector gate
-outputs and must not be described as an application-captured message.
+Revision 3 maps them to `8, 15, 0, 46`. These values are consumed by the
+firmware's diagnostic qualification logic; they are not channel enables. E78
+group 2 is very likely the eight port-injector channels because it is the only
+eight-channel group whose qualification is changed with engine/output activity.
 
 ## Selector 14: four programmable banks
 
@@ -497,7 +673,7 @@ The confirmed high-level order is:
 3. Send selector 8 a second time and classify the ASIC revision.
 4. Copy the appropriate selector-0 19-word ROM table into RAM.
 5. Send selector 0.
-6. If ASIC class 3, send selector 13's four-word prefix.
+6. If ASIC class 3, send selector 13's separate 19-word preconditioning burst.
 7. Initialize control/query buffers.
 8. Establish selector-6 mode state, ultimately reaching `0F14 3E20`.
 9. Enter cyclic selector 11/7 and selector 12/conditional-control service.
@@ -607,7 +783,7 @@ testing the ASIC:
 - DSPI-B SIU and controller setup.
 - Two selector-8 identification exchanges.
 - Revision-dependent selector-0 initialization.
-- Correct four-word selector-13 transaction for class 3.
+- Correct 19-word selector-13 preconditioning transaction for class 3.
 - Selector-6 startup and heartbeat transitions.
 - Selector-11 rotating protected query.
 - Selector-7 `0B01 0000 0000 1FC0` status query.
@@ -686,8 +862,16 @@ ExecuteDSPIBAsicTransactionBySelector
 IdentifyDSPIBAsicAndLoadInitTable
 ReidentifyDSPIBAsicAndLoadInitTable
 SendDSPIBRevision3Prefix
-SetAndSendDSPIBControlBit4
-SetAndSendDSPIBModeField
+SetAndSendC2MIORegister54Bit4
+SetAndSendC2MIORegister54ModeBits5Through7
+SendC2MIORegisters52And53DiagnosticQualification
+RunDSPIBRevision4AnalogFrontendStartupTest
+EncodeC2MIORev3Register5DAnalogRouting
+DecodeC2MIORegister57Or58LogicalId
+InitializeC2MIORegister57And58Command
+InitializeC2MIORegister59Command
+InitializeC2MIORegister54Command
+InitializeC2MIORegister55Query
 PrepareDSPIBRotatingDiagnosticQuery
 EncodeDSPIBProtectedDiagnosticBits
 DecodeDSPIBBulkDiagnostics
@@ -696,8 +880,9 @@ ServiceDSPIBSlowCyclicTransactions
 UpdateAndSendDSPIBControl1A
 g_astDSPIBSelectorTable
 g_awDSPIBSelector00Tx ... g_awDSPIBSelector14Rx
-g_awDSPIBRevision3InitRom
-g_awDSPIBRevision4InitRom
+g_awC2MIORev3Registers4CThrough5DInit
+g_awC2MIORev4Registers4CThrough5DInit
+g_awC2MIORev3PreconditioningBurst
 g_awDSPIBIdentificationQueryRom
 g_awDSPIBStatusQueryRom
 g_awDSPIBCounterQueryRom

@@ -1,4 +1,4 @@
-#include "MPC5xxxDSISerialOutputService.h"
+#include "DelphiDSIDigitalService.h"
 
 namespace
 {
@@ -9,7 +9,7 @@ namespace
 
 namespace MPC5xxx
 {
-	MPC5xxxDSISerialOutputService::MPC5xxxDSISerialOutputService(
+	DelphiDSIDigitalService::DelphiDSIDigitalService(
 		volatile DSPI_tag* leadingModule,
 		volatile DSPI_tag* clockingModule,
 		std::uint32_t leadingModuleConfiguration,
@@ -40,19 +40,27 @@ namespace MPC5xxx
 		_leadingModule->PUSHR.R = kPCS0;
 		_clockingModule->PUSHR.R = kPCS0;
 		Set(initialValue);
-		SIU.ECCR.R = 0x00000801U;
-		_leadingModule->MCR.R = leadingModuleConfiguration & ~kHalt;
-		_clockingModule->MCR.R = clockingModuleConfiguration & ~kHalt;
 	}
 
-	void MPC5xxxDSISerialOutputService::Set(std::uint32_t value)
+	void DelphiDSIDigitalService::Start()
+	{
+		if (_started)
+			return;
+		// Match stock order: release the DSPI-A chained slave first, followed
+		// by the DSPI-C clocking master that initiates the continuous stream.
+		_leadingModule->MCR.R &= ~kHalt;
+		_clockingModule->MCR.R &= ~kHalt;
+		_started = true;
+	}
+
+	void DelphiDSIDigitalService::Set(std::uint32_t value)
 	{
 		_value = value & _outputMask;
 		_leadingModule->ASDR.R = (_value >> 16U) & 0x001FU;
 		_clockingModule->ASDR.R = _value & 0xFFFFU;
 	}
 
-	void MPC5xxxDSISerialOutputService::InitPin(
+	void DelphiDSIDigitalService::InitPin(
 		EmbeddedIOServices::digitalpin_t pin,
 		EmbeddedIOServices::PinDirection direction)
 	{
@@ -60,13 +68,13 @@ namespace MPC5xxx
 		(void)direction;
 	}
 
-	bool MPC5xxxDSISerialOutputService::ReadPin(
+	bool DelphiDSIDigitalService::ReadPin(
 		EmbeddedIOServices::digitalpin_t pin)
 	{
 		return pin < kOutputCount && (_value & (1UL << pin)) != 0U;
 	}
 
-	void MPC5xxxDSISerialOutputService::WritePin(
+	void DelphiDSIDigitalService::WritePin(
 		EmbeddedIOServices::digitalpin_t pin,
 		bool value)
 	{
@@ -76,7 +84,7 @@ namespace MPC5xxx
 		Set(value ? _value | bit : _value & ~bit);
 	}
 
-	void MPC5xxxDSISerialOutputService::AttachInterrupt(
+	void DelphiDSIDigitalService::AttachInterrupt(
 		EmbeddedIOServices::digitalpin_t pin,
 		EmbeddedIOServices::callback_t callBack)
 	{
@@ -84,7 +92,7 @@ namespace MPC5xxx
 		(void)callBack;
 	}
 
-	void MPC5xxxDSISerialOutputService::DetachInterrupt(
+	void DelphiDSIDigitalService::DetachInterrupt(
 		EmbeddedIOServices::digitalpin_t pin)
 	{
 		(void)pin;

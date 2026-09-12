@@ -259,14 +259,17 @@ CF 4C 25 B7 16 EC 00 11 1E 10 1E 11 13 31 30 30 00 00
 00 00 05 41
 ```
 
-#### B4 — class-3-only prefix
+#### B4 — class-3-only preconditioning burst
 
 Only when ASIC class 3:
 
 ```text
-words: CF4C 25B7 16EC 0011
-bytes: CF 4C 25 B7 16 EC 00 11
+words: CF4C 25B7 16EC 0034 0000 0000 0000 0000 0000 0000
+       0000 0000 0000 0000 0000 0000 0000 0000 0000
+bytes: CF 4C 25 B7 16 EC 00 34 followed by 30 zero bytes
 ```
+
+This is a complete 19-word transaction, not a four-word prefix.
 
 #### B5 — third identification/cache refresh
 
@@ -425,7 +428,7 @@ objects, sends `80 FC 00 00 00 00`, and enters phase 7.
 2. Initialize eQADC, eMIOS, eDMA, and DSPI controller/DMA contexts.
 3. DSPI-B: send identification twice.
 4. DSPI-B: send the revision-selected 19-word ASIC initialization.
-5. DSPI-B: send the four-word prefix if class 3.
+5. DSPI-B: send the separate 19-word preconditioning burst if class 3.
 6. DSPI-D: send `80 FC 00 00 00 00` to enable the Group-6 bit-2 path.
 7. DSPI-D: send `6A 0C`, then set watchdog bit 5 and send `6A 2C`.
 8. Run the response-dependent Group-6 companion startup pulse sequence.

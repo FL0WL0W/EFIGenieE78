@@ -117,12 +117,38 @@ namespace E78
 	}
 
 	bool Delphi28046304Device::RequestStatus(
+		std::uint16_t controlWord,
 		Delphi28046304ResponseCallback responseCallback)
 	{
 		const std::uint16_t request[] = {
-			0x0B01U, 0x0000U, 0x0000U, 0x1FC0U,
+			0x0B01U, 0x0000U, _discreteOutputWord, controlWord,
 		};
 		return Transfer(request, 4U, responseCallback);
+	}
+
+	bool Delphi28046304Device::WriteDiscreteOutput(
+		std::uint8_t bit,
+		bool value,
+		Delphi28046304ResponseCallback responseCallback)
+	{
+		// The E78 uses bits 9-11 of word 2 in the 0B01 transaction.
+		if (bit < 9U || bit > 11U)
+			return false;
+
+		const std::uint16_t mask = static_cast<std::uint16_t>(1U << bit);
+		if (value)
+			_discreteOutputWord |= mask;
+		else
+			_discreteOutputWord &= static_cast<std::uint16_t>(~mask);
+
+		return RequestStatus(0x1FC0U, responseCallback);
+	}
+
+	bool Delphi28046304Device::ReadDiscreteOutput(std::uint8_t bit) const
+	{
+		if (bit < 9U || bit > 11U)
+			return false;
+		return (_discreteOutputWord & static_cast<std::uint16_t>(1U << bit)) != 0U;
 	}
 
 	bool Delphi28046304Device::ConfigureChannelGroups(
@@ -145,27 +171,37 @@ namespace E78
 	{
 		if (_watchdogStartupStage == 0U)
 		{
-			SendCommand(0x0F1AU, 0x0082U, nullptr);
-			for (std::size_t repeat = 0U; repeat < 4U; ++repeat)
-				SendCommand(0x0F1DU, 0x04F0U, nullptr);
-			RequestDiagnostic(nullptr);
-			if (QueueRotatingDiagnostic())
-				RequestStatus(nullptr);
+			// This closes the first half of the stock startup sequence. It is
+			// staged here because main has already filled DSPI-B's eight-entry
+			// software queue through the preceding diagnostic request.
+			SendCommand(0x0F14U, 0x3E20U, nullptr);
 			_watchdogStartupStage = 1U;
 			return;
 		}
 
 		if (_watchdogStartupStage == 1U)
 		{
-			ConfigureChannelGroups(nullptr);
+			SendCommand(0x0F1AU, 0x0082U, nullptr);
+			for (std::size_t repeat = 0U; repeat < 4U; ++repeat)
+				SendCommand(0x0F1DU, 0x04F0U, nullptr);
+			RequestDiagnostic(nullptr);
+			if (QueueRotatingDiagnostic())
+				RequestStatus(0x0000U, nullptr);
 			_watchdogStartupStage = 2U;
+			return;
+		}
+
+		if (_watchdogStartupStage == 2U)
+		{
+			ConfigureChannelGroups(nullptr);
+			_watchdogStartupStage = 3U;
 			return;
 		}
 
 		RequestDiagnostic(nullptr);
 		++_diagnosticPass;
 		if ((_diagnosticPass & 3U) == 0U && QueueRotatingDiagnostic())
-			RequestStatus(nullptr);
+			RequestStatus(0x1FC0U, nullptr);
 
 		++_heartbeatPass;
 		if (_heartbeatPass == 30U)
