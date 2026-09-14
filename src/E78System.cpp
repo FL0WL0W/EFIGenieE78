@@ -159,6 +159,7 @@ namespace E78
 			  &DSPI_B,
 			  DelphiConfiguration),
 		  _canBusNumber(InitializeFlexCANA()),
+		  TimerService(MPC5xxx::MPC5xxxTimerService::Instance()),
 		  ISOTPService(
 			  MPC5xxx::MPC5xxxFlexCAN2Service::Instance().GetISOTPService(
 				  {0x7E0U, _canBusNumber},
@@ -182,6 +183,9 @@ namespace E78
 			  DelphiDigitalOutputService,
 			  Delphi28046304)
 	{
+		if (MPC5xxx::MPC5xxxTimerService::Initialize())
+			TimerService.Calibrate();
+
 		// E78 board-specific SPI routing, copied from the stock application's
 		// PCR image. E78System owns every pad it uses and does not depend on
 		// state inherited from the bootloader.

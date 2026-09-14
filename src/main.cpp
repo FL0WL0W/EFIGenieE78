@@ -48,13 +48,6 @@ namespace
 	};
 	constexpr size_t OutputCount = sizeof(OutputList) / sizeof(OutputList[0]);
 
-	std::uint32_t ReadTimebase()
-	{
-		std::uint32_t value;
-		asm volatile("mftb %0" : "=r"(value));
-		return value;
-	}
-
 	void ServiceCoreWatchdog()
 	{
 		const std::uint32_t watchdogService = 0x40000000U;
@@ -69,82 +62,89 @@ namespace
 
 	struct SlowUARTSweep
 	{
-		std::uint8_t frameBit = 0U;
-		bool transmitting = false;
-		std::uint32_t deadline = 0U;
-	};
+		static constexpr std::uint8_t TransitionCount = 12U;
+		static constexpr std::uint8_t IdleTransition = 0U;
+		static constexpr std::uint8_t StartTransition = 1U;
+		static constexpr std::uint8_t FirstDataTransition = 2U;
+		static constexpr std::uint8_t StopTransition = 11U;
 
-	void BeginUARTFrame(
-		SlowUARTSweep& sweep,
-		IDigitalService& digitalService,
-		std::uint32_t now)
-	{
-		for (size_t pin = 0U; pin < OutputCount; ++pin)
+		IDigitalService& digitalService;
+		volatile bool frameComplete = false;
+		Task transitionTasks[TransitionCount];
+		Task frameCompleteTask;
+
+		SlowUARTSweep(IDigitalService& digital)
+			: digitalService(digital),
+			  transitionTasks{
+				  Task([this]() { ApplyTransition(0U); }),
+				  Task([this]() { ApplyTransition(1U); }),
+				  Task([this]() { ApplyTransition(2U); }),
+				  Task([this]() { ApplyTransition(3U); }),
+				  Task([this]() { ApplyTransition(4U); }),
+				  Task([this]() { ApplyTransition(5U); }),
+				  Task([this]() { ApplyTransition(6U); }),
+				  Task([this]() { ApplyTransition(7U); }),
+				  Task([this]() { ApplyTransition(8U); }),
+				  Task([this]() { ApplyTransition(9U); }),
+				  Task([this]() { ApplyTransition(10U); }),
+				  Task([this]() { ApplyTransition(11U); }),
+			  },
+			  frameCompleteTask([this]() { frameComplete = true; })
 		{
-			// Establish idle high for a complete bit time before emitting the
-			// start bit so the decoder can establish valid UART framing.
-			digitalService.WritePin(OutputList[pin], true);
-			digitalService.InitPin(OutputList[pin], Out);
-		}
-		sweep.frameBit = 0xFFU; // pre-frame idle-high interval
-		sweep.transmitting = true;
-		sweep.deadline = now + UARTBitTimebaseTicks;
-	}
-
-	void ServiceUARTSweep(
-		SlowUARTSweep& sweep,
-		IDigitalService& digitalService,
-		std::uint32_t now)
-	{
-		if (static_cast<std::int32_t>(now - sweep.deadline) < 0) return;
-
-		if (!sweep.transmitting)
-		{
-			BeginUARTFrame(sweep, digitalService, now);
-			return;
 		}
 
-		if (sweep.frameBit == 0xFFU)
-		{
-			for (size_t pin = 0U; pin < OutputCount; ++pin)
-				digitalService.WritePin(OutputList[pin], false); // start bit
-			sweep.frameBit = 0U;
-			sweep.deadline += UARTBitTimebaseTicks;
-			return;
-		}
-
-		++sweep.frameBit;
-		if (sweep.frameBit <= 9U)
+		void ApplyTransition(const std::uint8_t transition)
 		{
 			for (size_t pin = 0U; pin < OutputCount; ++pin)
 			{
-				// UART sends the full connector-pin encoding LSB first. Nine
-				// data bits represent every X1, X2, and X3 connector pin.
-				const std::uint16_t value = OutputList[pin];
-				digitalService.WritePin(
-					OutputList[pin],
-					((value >> (sweep.frameBit - 1U)) & 1U) != 0U);
+				bool value;
+				if (transition == IdleTransition || transition == StopTransition)
+					value = true;
+				else if (transition == StartTransition)
+					value = false;
+				else
+				{
+					// UART sends the complete connector-pin encoding LSB first.
+					const std::uint8_t dataBit = static_cast<std::uint8_t>(
+						transition - FirstDataTransition);
+					value = ((OutputList[pin] >> dataBit) & 1U) != 0U;
+				}
+
+				digitalService.WritePin(OutputList[pin], value);
+				if (transition == IdleTransition)
+					digitalService.InitPin(OutputList[pin], Out);
 			}
-			sweep.deadline += UARTBitTimebaseTicks;
-			return;
 		}
 
-		if (sweep.frameBit == 10U)
+		void ScheduleFrame(ITimerService& timerService, const tick_t startTick)
 		{
-			for (size_t pin = 0U; pin < OutputCount; ++pin)
-				digitalService.WritePin(OutputList[pin], true); // stop bit
-			sweep.deadline += UARTBitTimebaseTicks;
-			return;
+			for (std::uint8_t transition = 0U;
+				transition < TransitionCount;
+				++transition)
+			{
+				timerService.ScheduleTask(
+					&transitionTasks[transition],
+					startTick + transition * UARTBitTimebaseTicks);
+			}
+
+			timerService.ScheduleTask(
+				&frameCompleteTask,
+				startTick + TransitionCount * UARTBitTimebaseTicks +
+					UARTInterPinTimebaseTicks);
 		}
 
-		sweep.transmitting = false;
-		sweep.deadline = now + UARTInterPinTimebaseTicks;
-	}
+		void Service(ITimerService& timerService)
+		{
+			if (!frameComplete) return;
+			frameComplete = false;
+			ScheduleFrame(timerService, timerService.GetTick() + 1U);
+		}
+	};
 }
 
 extern "C" int main()
 {
-	asm("wrteei 0");
+	asm("wrteei 1");
 
 	E78::E78System system;
 	system.Initialize();
@@ -169,26 +169,20 @@ extern "C" int main()
 		WriteToFlash,
 		ExitToBootloaderUploadRoutine);
 
-	asm volatile(
-		"mbar\n"
-		"wrteei 1\n"
-		"isync\n"
-		:
-		:
-		: "memory");
-
 	const std::uint8_t alive = 0x99U;
 	isotp->Send(&alive, 1U);
-	std::uint32_t loopStart = ReadTimebase();
-	SlowUARTSweep uartSweep;
-	uartSweep.deadline = loopStart + UARTInterPinTimebaseTicks;
+	std::uint32_t loopStart = system.TimerService.GetTick();
+	SlowUARTSweep uartSweep(system.DigitalService);
+	uartSweep.ScheduleFrame(
+		system.TimerService,
+		loopStart + UARTInterPinTimebaseTicks);
 	while (true)
 	{
 		system.Service();
 
-		const std::uint32_t now = ReadTimebase();
-		ServiceUARTSweep(uartSweep, system.DigitalService, now);
+		uartSweep.Service(system.TimerService);
 
+		const std::uint32_t now = system.TimerService.GetTick();
 		if (static_cast<std::uint32_t>(now - loopStart) <
 			LoopPeriodTimebaseTicks)
 			continue;
