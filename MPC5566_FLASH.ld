@@ -59,8 +59,15 @@ SECTIONS
 	.intc_vector_table : ALIGN(0x10000)
 	{
 		__INTERRUPT_VECTOR_BASE = .;
+		__INTERRUPT_CACHE_LOCK_START = .;
 		KEEP(*(.intc_vector_table))
 		__INTERRUPT_VECTOR_END = .;
+		. = ALIGN(32);
+		__INTERRUPT_HOT_START = .;
+		KEEP(*(.interrupt_hot))
+		__INTERRUPT_HOT_END = .;
+		. = ALIGN(32);
+		__INTERRUPT_CACHE_LOCK_END = .;
 	} > FLASH
 
 	.ctors : ALIGN(4)
@@ -190,6 +197,10 @@ SECTIONS
 	ASSERT(ADDR(.startup) == 0x00080018, "patched-bootloader application entry moved")
 	ASSERT((ADDR(.intc_vector_table) & 0xFFFF) == 0, "interrupt vectors are not 64-KiB aligned")
 	ASSERT(SIZEOF(.intc_vector_table) <= 0x10000, "interrupt vectors exceed one IVPR region")
+	ASSERT((__INTERRUPT_CACHE_LOCK_START & 31) == 0, "interrupt cache-lock start is not line aligned")
+	ASSERT((__INTERRUPT_CACHE_LOCK_END & 31) == 0, "interrupt cache-lock end is not line aligned")
+	ASSERT((__INTERRUPT_CACHE_LOCK_END - __INTERRUPT_CACHE_LOCK_START) <= 0x2000,
+	       "interrupt cache-lock region exceeds one quarter of L1 cache")
 	ASSERT(SIZEOF(.application_header) == 0x18, "compact application header has wrong size")
 	ASSERT((__APPLICATION_IMAGE_END - ORIGIN(FLASH)) <= LENGTH(FLASH), "application image exceeds flash")
 }

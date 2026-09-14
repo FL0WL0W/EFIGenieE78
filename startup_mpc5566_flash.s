@@ -112,10 +112,15 @@ BssInitialized:
 	lis	r2, _SDA2_BASE_@h
 	ori	r2, r2, _SDA2_BASE_@l
 
+	;# Replace all cache state inherited from the resident bootloader with a
+	;# known 8-way application configuration, then lock the complete interrupt
+	;# vector and shared-entry region before any application code runs.
+	bl	InitializeAndLockInterruptCache
+
 	;# Run C/C++ static initialization only after writable memory, the stack,
-	;# and the EABI small-data bases are ready. __init handles this toolchain's
-	;# legacy .ctors entries; the explicit array walks also support objects
-	;# emitted through the modern preinit_array/init_array ABI.
+	;# the EABI small-data bases, and the application cache are ready. __init
+	;# handles this toolchain's legacy .ctors entries; the explicit array walks
+	;# also support objects emitted through the modern init-array ABI.
 	bl	RunGlobalConstructors
 
 	;# Install the e200z6 IVORs and select MPC5566 INTC hardware-vector mode.
@@ -163,6 +168,71 @@ RunGlobalConstructors:
 	lwz	r0, 20(r1)
 	mtlr	r0
 	addi	r1, r1, 16
+	blr
+
+;# The MPC5566 has a unified 32-KiB cache with 32-byte lines. Discard the cache
+;# configuration and cache-as-RAM locks inherited from the bootloader, select
+;# the normal 128-set x 8-way organization, then touch-and-lock every line in
+;# the linker's contiguous vector-table and shared-entry range.
+;#
+;# Returns r3 = 1 when every lock completed without CUL/CLO, otherwise zero.
+InitializeAndLockInterruptCache:
+	;# Disable cache lookups and clear all configurable fields. L1CSR0 changes
+	;# require the ordering sequence specified by the e200z6 documentation.
+	li	r3, 0
+	msync
+	isync
+	mtspr	1010, r3
+	isync
+
+	;# Remove every inherited line lock. CLFC clears itself when the operation
+	;# completes (approximately 134 clocks).
+	li	r3, 0x0100		;# L1CSR0[CLFC]
+	msync
+	isync
+	mtspr	1010, r3
+ClearCacheLocksWait:
+	mfspr	r4, 1010
+	andi.	r4, r4, 0x0100
+	bne	ClearCacheLocksWait
+
+	;# Invalidate all inherited cache contents after their lock bits are clear.
+	li	r3, 0x0002		;# L1CSR0[CINV]
+	msync
+	isync
+	mtspr	1010, r3
+InvalidateCacheWait:
+	mfspr	r4, 1010
+	andi.	r4, r4, 0x0002
+	bne	InvalidateCacheWait
+
+	;# CE=1 with every other field clear selects normal write-through operation,
+	;# enabled buffering/streaming, WAM=0, and 128 sets x 8 ways (CORG=0).
+	li	r3, 0x0001
+	msync
+	isync
+	mtspr	1010, r3
+	isync
+
+	lis	r4, __INTERRUPT_CACHE_LOCK_START@h
+	ori	r4, r4, __INTERRUPT_CACHE_LOCK_START@l
+	lis	r5, __INTERRUPT_CACHE_LOCK_END@h
+	ori	r5, r5, __INTERRUPT_CACHE_LOCK_END@l
+LockInterruptCacheLine:
+	cmplw	r4, r5
+	bge	InterruptCacheLockComplete
+	icbtls	0, 0, r4
+	addi	r4, r4, 32
+	b	LockInterruptCacheLine
+
+InterruptCacheLockComplete:
+	msync
+	isync
+	mfspr	r3, 1010
+	andi.	r3, r3, 0x0600	;# CUL or CLO indicates lock failure
+	li	r3, 0
+	bnelr
+	li	r3, 1
 	blr
 
 ;# Call each non-null function pointer in the half-open range [r3, r4).
@@ -235,6 +305,48 @@ E78ClearBootParameterWorkspace:
 	.globl E78BootValidateApplicationState
 	.type E78BootValidateApplicationState, @function
 E78BootValidateApplicationState:
+;# An application-requested upload is carried across a full software-system
+;# reset in the last aligned ECC granule of SRAM.  Never inspect that SRAM on
+;# a cold or externally generated reset: its ECC may not have been initialized.
+	lis	r4, 0xC3F9
+	lwz	r5, 0x000C(r4)		;# SIU.RSR
+	lis	r6, 0x0002		;# RSR[SSRS]
+	and.	r5, r5, r6
+	beq	E78BootPerformNormalValidation
+
+	lis	r4, 0x4002
+	addi	r4, r4, -16		;# 0x4001FFF0
+	lwz	r5, 0(r4)
+	lis	r6, 0x4555		;# "EUPL"
+	ori	r6, r6, 0x504C
+	cmpw	r5, r6
+	bne	E78BootPerformNormalValidation
+	lwz	r5, 4(r4)
+	lis	r6, 0xBAAA		;# complement of "EUPL"
+	ori	r6, r6, 0xAFB3
+	cmpw	r5, r6
+	bne	E78BootPerformNormalValidation
+
+;# Consume the one-shot request before entering the upload routine. The ECC
+;# granule is already valid after the software reset, so ordinary word stores
+;# are safe here.
+	li	r5, 0
+	stw	r5, 0(r4)
+	stw	r5, 4(r4)
+	msync
+
+;# The reset restarted BAM/the resident bootloader, so its cache-as-RAM stack
+;# has been constructed again and is safe to use. Enter the stock secondary
+;# upload routine without returning through the application-validation caller.
+	wrteei	0
+	lis	r1, 0x6000
+	ori	r1, r1, 0x3FF0
+	lis	r12, 0x0002
+	lwz	r12, -0x5060(r12)	;# pointer at 0x0001AFA0
+	mtctr	r12
+	bctr
+
+E78BootPerformNormalValidation:
 	stwu	r1, -16(r1)
 	mflr	r0
 	stw	r0, 20(r1)
@@ -303,21 +415,32 @@ E78ApplicationIdentifier:
 ;# The four bytes returned by the stock E78 application for boot service 1A C1.
 	.byte 0x00, 0xC1, 0x52, 0x45
 
-;# No-return transition back into the resident secondary bootloader.
+;# Request a full software-system reset. The bootloader will recreate all of
+;# its own context and E78BootValidateApplicationState will consume the retained
+;# SRAM marker and enter its secondary upload routine.
 	.section .text_booke, "ax"
 	.align 2
 	.globl ExitToBootloaderUploadRoutine
 	.type ExitToBootloaderUploadRoutine, @function
 ExitToBootloaderUploadRoutine:
 	wrteei	0
-;# Discard the application's SRAM call stack and restore the locked
-;# cache-as-RAM stack used by the stock bootloader/application handoff.
-;# EnterSecondaryBootloaderMode clears 0x40000400..0x4001BFFF, which includes
-;# our normal 0x40008000..0x4000FCFF runtime stack.
-	lis	r1, 0x6000
-	ori	r1, r1, 0x3FF0
-	lis	r12, 0x0002
-	lwz	r12, -0x5060(r12)
-	mtctr	r12
-	bctr
+;# Write the magic and its complement into one aligned 64-bit ECC granule.
+;# r30/r31 are intentionally not preserved because this function cannot return.
+	lis	r29, 0x4002
+	addi	r29, r29, -16		;# 0x4001FFF0
+	lis	r30, 0x4555		;# "EUPL"
+	ori	r30, r30, 0x504C
+	lis	r31, 0xBAAA
+	ori	r31, r31, 0xAFB3
+	stmw	r30, 0(r29)
+	msync
+
+;# SIU.SRCR[SSR] requests a full internal system reset through BAM. SER is not
+;# sufficient because it would not reconstruct the resident bootloader state.
+	lis	r3, 0xC3F9
+	lis	r4, 0x8000
+	stw	r4, 0x0010(r3)		;# SIU.SRCR = SSR
+	msync
+E78WaitForSoftwareSystemReset:
+	b	E78WaitForSoftwareSystemReset
 	.size ExitToBootloaderUploadRoutine, .-ExitToBootloaderUploadRoutine

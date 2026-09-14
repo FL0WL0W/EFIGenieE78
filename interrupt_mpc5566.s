@@ -153,6 +153,8 @@ Default_Handler:
     .set \name, Default_Handler
 .endm
 
+.section .interrupt_hot, "ax"
+.balign 0x20
 CommonInterruptEntry:
     stw     r3, R3_OFFSET(r1)
     mfsrr0  r3
@@ -169,6 +171,7 @@ CommonInterruptEntry:
  * the exception entry value of MSR[EE]=0 so the core decrementer cannot nest
  * above them.
  */
+.balign 0x20
 DigitalInterruptEntry:
     stw     r3, R3_OFFSET(r1)
     mfsrr0  r3
@@ -248,6 +251,7 @@ CommonInterruptContextSaved:
  * Return kind 1: CSRR0/CSRR1 and rfci
  * Return kind 2: DSRR0/DSRR1 and rfdi
  */
+.balign 0x20
 CommonCoreExceptionEntry:
     stw     r3, R3_OFFSET(r1)
     mfspr   r3, 26                  /* SRR0 */
