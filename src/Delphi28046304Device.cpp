@@ -120,8 +120,12 @@ namespace E78
 		std::uint16_t controlWord,
 		Delphi28046304ResponseCallback responseCallback)
 	{
+		const std::uint16_t discreteOutputWord = static_cast<std::uint16_t>(
+			(_discreteOutput9 ? 0x0200U : 0x0000U) |
+			(_discreteOutput10 ? 0x0400U : 0x0000U) |
+			(_discreteOutput11 ? 0x0800U : 0x0000U));
 		const std::uint16_t request[] = {
-			0x0B01U, 0x0000U, _discreteOutputWord, controlWord,
+			0x0B01U, 0x0000U, discreteOutputWord, controlWord,
 		};
 		return Transfer(request, 4U, responseCallback);
 	}
@@ -135,20 +139,26 @@ namespace E78
 		if (bit < 9U || bit > 11U)
 			return false;
 
-		const std::uint16_t mask = static_cast<std::uint16_t>(1U << bit);
-		if (value)
-			_discreteOutputWord |= mask;
-		else
-			_discreteOutputWord &= static_cast<std::uint16_t>(~mask);
+		switch (bit)
+		{
+		case 9U: _discreteOutput9 = value; break;
+		case 10U: _discreteOutput10 = value; break;
+		case 11U: _discreteOutput11 = value; break;
+		default: return false;
+		}
 
 		return RequestStatus(0x1FC0U, responseCallback);
 	}
 
 	bool Delphi28046304Device::ReadDiscreteOutput(std::uint8_t bit) const
 	{
-		if (bit < 9U || bit > 11U)
-			return false;
-		return (_discreteOutputWord & static_cast<std::uint16_t>(1U << bit)) != 0U;
+		switch (bit)
+		{
+		case 9U: return _discreteOutput9;
+		case 10U: return _discreteOutput10;
+		case 11U: return _discreteOutput11;
+		default: return false;
+		}
 	}
 
 	bool Delphi28046304Device::ConfigureChannelGroups(

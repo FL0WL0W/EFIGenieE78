@@ -66,7 +66,6 @@
 .global InitializeHardwareInterrupts
 .type InitializeHardwareInterrupts, @function
 InitializeHardwareInterrupts:
-    wrteei  0
 
     lis     r3, 0xFFF4
     ori     r3, r3, 0x8000          /* INTC base: 0xFFF48000 */

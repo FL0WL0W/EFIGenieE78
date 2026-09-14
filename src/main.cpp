@@ -23,11 +23,15 @@ extern "C" __attribute__((weak)) bool WriteToFlash(
 namespace
 {
 	constexpr std::uint32_t LoopPeriodTimebaseTicks = 384000;
-	// At a 32 MHz timebase this produces an intentionally slow 100-baud UART.
-	// One 9N1 word therefore takes 110 ms. Every output transmits its complete
-	// connector-pin encoding simultaneously, followed by a 500 ms idle period.
-	constexpr std::uint32_t UARTBitTimebaseTicks = 320000U;
-	constexpr std::uint32_t UARTInterPinTimebaseTicks = 16000000U;
+	constexpr tick_t UARTBaudRate = 400U; 
+	constexpr tick_t UARTInterFrameMilliseconds = 500U;
+
+	tick_t UARTInterFrameTicks(ITimerService& timerService)
+	{
+		return static_cast<tick_t>(
+			(static_cast<std::uint64_t>(timerService.GetTicksPerSecond()) *
+				UARTInterFrameMilliseconds) / 1000U);
+	}
 
 	// Every connector pin supported as an output by E78DigitalService. This
 	// includes direct MCU GPIO/eTPU pads, the 21 Delphi DSI outputs, and the
@@ -37,11 +41,11 @@ namespace
 		114U, 127U, 128U, 140U, 141U, 147U, 150U,
 		151U, 152U, 153U, 154U, 155U, 156U,
 		// X2
-		201U, 202U, 203U, 204U, 205U, 206U, 207U,
+		201U, 202U, 203U, 204U, 205U, 206U, 207U, 
 		208U, 209U, 210U, 211U, 212U, 214U, 215U,
 		216U, 217U, 218U, 232U, 233U, 234U, 252U,
 		253U, 254U, 255U, 272U,
-		// X3
+		// // X3
 		303U, 304U, 305U, 306U, 307U, 308U, 309U,
 		310U, 311U, 312U, 313U, 314U, 315U, 316U,
 		317U, 332U,
@@ -52,9 +56,7 @@ namespace
 	{
 		const std::uint32_t watchdogService = 0x40000000U;
 		asm volatile(
-			"isync\n"
 			"mtspr 336, %0\n"
-			"isync\n"
 			:
 			: "r"(watchdogService)
 			: "memory");
@@ -118,26 +120,29 @@ namespace
 
 		void ScheduleFrame(ITimerService& timerService, const tick_t startTick)
 		{
+			const tick_t ticksPerSecond = timerService.GetTicksPerSecond();
+			const tick_t bitTicks =
+				(ticksPerSecond + UARTBaudRate / 2U) / UARTBaudRate;
+
 			for (std::uint8_t transition = 0U;
 				transition < TransitionCount;
 				++transition)
 			{
 				timerService.ScheduleTask(
 					&transitionTasks[transition],
-					startTick + transition * UARTBitTimebaseTicks);
+					startTick + transition * bitTicks);
 			}
 
 			timerService.ScheduleTask(
 				&frameCompleteTask,
-				startTick + TransitionCount * UARTBitTimebaseTicks +
-					UARTInterPinTimebaseTicks);
+				startTick + TransitionCount * bitTicks + 1);
 		}
 
 		void Service(ITimerService& timerService)
 		{
 			if (!frameComplete) return;
 			frameComplete = false;
-			ScheduleFrame(timerService, timerService.GetTick() + 1U);
+			ScheduleFrame(timerService, timerService.GetTick() + UARTInterFrameTicks(timerService));
 		}
 	};
 }
@@ -175,7 +180,7 @@ extern "C" int main()
 	SlowUARTSweep uartSweep(system.DigitalService);
 	uartSweep.ScheduleFrame(
 		system.TimerService,
-		loopStart + UARTInterPinTimebaseTicks);
+		loopStart + UARTInterFrameTicks(system.TimerService));
 	while (true)
 	{
 		system.Service();

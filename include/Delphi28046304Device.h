@@ -26,7 +26,9 @@ namespace E78
 		EmbeddedIOServices::ISPIService& _service;
 		std::uint16_t _rotatingDiagnosticCommand = 0x011FU;
 		std::uint16_t _rotatingDiagnosticValue = 0x0000U;
-		std::uint16_t _discreteOutputWord = 0x0000U;
+		volatile bool _discreteOutput9 = false;
+		volatile bool _discreteOutput10 = false;
+		volatile bool _discreteOutput11 = false;
 		std::uint8_t _watchdogStartupStage = 0U;
 		std::uint8_t _diagnosticPass = 0U;
 		std::uint8_t _heartbeatPass = 0U;
