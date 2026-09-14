@@ -183,8 +183,7 @@ namespace E78
 			  DelphiDigitalOutputService,
 			  Delphi28046304)
 	{
-		if (MPC5xxx::MPC5xxxTimerService::Initialize())
-			TimerService.Calibrate();
+		MPC5xxx::MPC5xxxTimerService::Initialize();
 
 		// E78 board-specific SPI routing, copied from the stock application's
 		// PCR image. E78System owns every pad it uses and does not depend on
@@ -226,6 +225,7 @@ namespace E78
 		if (_startupStarted)
 			return;
 		_startupStarted = true;
+		TimerService.Calibrate();
 		Delphi28046304.RequestIdentification(
 			[this](const std::uint16_t*, std::size_t) {
 				ContinueAfterFirstIdentification();
@@ -283,6 +283,8 @@ namespace E78
 
 	void E78System::Service()
 	{
+		// FIFO progress is interrupt-driven. These calls only retire completed
+		// transfers and execute their callbacks in the main context.
 		MPC5xxx::MPC5xxxSPIService::Service(DSPI_B);
 		MPC5xxx::MPC5xxxSPIService::Service(DSPI_D);
 	}

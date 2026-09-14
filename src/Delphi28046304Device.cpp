@@ -121,9 +121,7 @@ namespace E78
 		Delphi28046304ResponseCallback responseCallback)
 	{
 		const std::uint16_t discreteOutputWord = static_cast<std::uint16_t>(
-			(_discreteOutput9 ? 0x0200U : 0x0000U) |
-			(_discreteOutput10 ? 0x0400U : 0x0000U) |
-			(_discreteOutput11 ? 0x0800U : 0x0000U));
+			__atomic_load_n(&_discreteOutputs, __ATOMIC_RELAXED));
 		const std::uint16_t request[] = {
 			0x0B01U, 0x0000U, discreteOutputWord, controlWord,
 		};
@@ -132,33 +130,26 @@ namespace E78
 
 	bool Delphi28046304Device::WriteDiscreteOutput(
 		std::uint8_t bit,
-		bool value,
-		Delphi28046304ResponseCallback responseCallback)
+		bool value)
 	{
 		// The E78 uses bits 9-11 of word 2 in the 0B01 transaction.
 		if (bit < 9U || bit > 11U)
 			return false;
 
-		switch (bit)
-		{
-		case 9U: _discreteOutput9 = value; break;
-		case 10U: _discreteOutput10 = value; break;
-		case 11U: _discreteOutput11 = value; break;
-		default: return false;
-		}
-
-		return RequestStatus(0x1FC0U, responseCallback);
+		const std::uint32_t mask = 1UL << bit;
+		if (value)
+			__atomic_fetch_or(&_discreteOutputs, mask, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_and(&_discreteOutputs, ~mask, __ATOMIC_RELAXED);
+		return true;
 	}
 
 	bool Delphi28046304Device::ReadDiscreteOutput(std::uint8_t bit) const
 	{
-		switch (bit)
-		{
-		case 9U: return _discreteOutput9;
-		case 10U: return _discreteOutput10;
-		case 11U: return _discreteOutput11;
-		default: return false;
-		}
+		if (bit < 9U || bit > 11U)
+			return false;
+		return (__atomic_load_n(&_discreteOutputs, __ATOMIC_RELAXED) &
+			(1UL << bit)) != 0U;
 	}
 
 	bool Delphi28046304Device::ConfigureChannelGroups(

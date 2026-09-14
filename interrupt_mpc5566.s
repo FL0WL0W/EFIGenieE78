@@ -30,6 +30,7 @@
 .set SRR0_OFFSET,           68
 .set SRR1_OFFSET,           72
 .set RETURN_KIND_OFFSET,    76
+.set PREVIOUS_CPR_OFFSET,   76
 .set INTERRUPT_FRAME_SIZE,  80
 
 .if (INTERRUPT_FRAME_SIZE & 15)
@@ -160,6 +161,22 @@ CommonInterruptEntry:
     stw     r3, SRR1_OFFSET(r1)
 
     wrteei  1
+    b       CommonInterruptContextSaved
+
+/*
+ * Digital inputs are the highest application interrupt class. They use the
+ * same context frame and return path as every other INTC source, but retain
+ * the exception entry value of MSR[EE]=0 so the core decrementer cannot nest
+ * above them.
+ */
+DigitalInterruptEntry:
+    stw     r3, R3_OFFSET(r1)
+    mfsrr0  r3
+    stw     r3, SRR0_OFFSET(r1)
+    mfsrr1  r3
+    stw     r3, SRR1_OFFSET(r1)
+
+CommonInterruptContextSaved:
 
     stw     r4, R4_OFFSET(r1)
     stw     r5, R5_OFFSET(r1)
@@ -309,7 +326,6 @@ CommonCoreExceptionBody:
     beq     .LCoreReturnCritical
     cmpwi   r3, 2
     beq     .LCoreReturnDebug
-
 .LCoreReturnNormal:
     lwz     r3, CR_OFFSET(r1)
     mtcr    r3
@@ -358,13 +374,17 @@ CommonCoreExceptionBody:
 .endm
 
 
-.macro intc_wrapper body
+.macro intc_wrapper body, entry=CommonInterruptEntry
     set_weak_default \body
     .balign 0x10
     stwu    r0,-INTERRUPT_FRAME_SIZE(r1)
     lis     r0,\body@h
     ori     r0,r0,\body@l
-    b       CommonInterruptEntry
+    b       \entry
+.endm
+
+.macro digital_intc_wrapper body
+    intc_wrapper \body, DigitalInterruptEntry
 .endm
 
 .macro intc_default
@@ -423,11 +443,11 @@ intc_wrapper EDMA_Channels0To31Error_Handler
 intc_wrapper FMPLL_LossOfClock_Handler
 intc_wrapper FMPLL_LossOfLock_Handler
 intc_wrapper SIU_ExternalInterruptOverrun_Handler
-intc_wrapper SIU_ExternalInterrupt0_Handler
-intc_wrapper SIU_ExternalInterrupt1_Handler
-intc_wrapper SIU_ExternalInterrupt2_Handler
-intc_wrapper SIU_ExternalInterrupt3_Handler
-intc_wrapper SIU_ExternalInterrupts4To15_Handler
+digital_intc_wrapper SIU_ExternalInterrupt0_Handler
+digital_intc_wrapper SIU_ExternalInterrupt1_Handler
+digital_intc_wrapper SIU_ExternalInterrupt2_Handler
+digital_intc_wrapper SIU_ExternalInterrupt3_Handler
+digital_intc_wrapper SIU_ExternalInterrupts4To15_Handler
 
 /* 51-66: eMIOS channels 0-15. */
 .irp channel,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
@@ -437,7 +457,7 @@ intc_wrapper SIU_ExternalInterrupts4To15_Handler
 /* 67-99: eTPU global exception and engine A channels 0-31. */
 intc_wrapper ETPU_GlobalException_Handler
 .irp channel,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
-    intc_wrapper ETPU_A_Channel\channel\()_Handler
+    digital_intc_wrapper ETPU_A_Channel\channel\()_Handler
 .endr
 
 /* 100-130: eQADC overrun and the five interrupt sources for FIFOs 0-5. */
@@ -498,7 +518,7 @@ intc_wrapper EDMA_Channels32To63Error_Handler
 
 /* 243-274: eTPU engine B channels 0-31. */
 .irp channel,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
-    intc_wrapper ETPU_B_Channel\channel\()_Handler
+    digital_intc_wrapper ETPU_B_Channel\channel\()_Handler
 .endr
 
 /* 275-279: DSPI A. */
@@ -548,7 +568,98 @@ core_exception_wrapper CoreProgramVector, Program_Handler
 core_exception_wrapper CoreFloatingPointUnavailableVector, FloatingPointUnavailable_Handler
 core_exception_wrapper CoreSystemCallVector, SystemCall_Handler
 core_exception_wrapper CoreAuxiliaryProcessorUnavailableVector, AuxiliaryProcessorUnavailable_Handler
-core_exception_wrapper CoreDecrementerVector, Decrementer_Handler
+/*
+ * The decrementer has one fixed C/C++ handler, so its IVOR points directly to
+ * a dedicated ABI wrapper instead of passing a handler address through the
+ * generic core-exception trampoline. Acknowledge the decrementer before
+ * enabling nesting, then raise the INTC threshold so only priority-3 digital
+ * inputs can preempt this priority-2 timer handler.
+ */
+set_weak_default Decrementer_Handler
+.balign 0x10
+.global CoreDecrementerVector
+.type CoreDecrementerVector, @function
+CoreDecrementerVector:
+    stwu    r0, -INTERRUPT_FRAME_SIZE(r1)
+    stw     r3, R3_OFFSET(r1)
+    mfspr   r3, 26                  /* SRR0 */
+    stw     r3, SRR0_OFFSET(r1)
+    mfspr   r3, 27                  /* SRR1 */
+    stw     r3, SRR1_OFFSET(r1)
+
+    lis     r0, 0x0800
+    mtspr   336, r0                 /* TSR[DIS]=1: acknowledge decrementer */
+
+    lis     r3, 0xFFF4
+    ori     r3, r3, 0x8000          /* INTC base: 0xFFF48000 */
+    lwz     r0, 0x08(r3)
+    stw     r0, PREVIOUS_CPR_OFFSET(r1)
+    li      r0, 2
+    stw     r0, 0x08(r3)
+    mbar
+    wrteei  1
+
+    stw     r4, R4_OFFSET(r1)
+    stw     r5, R5_OFFSET(r1)
+    stw     r6, R6_OFFSET(r1)
+    stw     r7, R7_OFFSET(r1)
+    stw     r8, R8_OFFSET(r1)
+    stw     r9, R9_OFFSET(r1)
+    stw     r10,R10_OFFSET(r1)
+    stw     r11,R11_OFFSET(r1)
+    stw     r12,R12_OFFSET(r1)
+
+    mflr    r3
+    stw     r3, LR_OFFSET(r1)
+    mfctr   r3
+    stw     r3, CTR_OFFSET(r1)
+    mfcr    r3
+    stw     r3, CR_OFFSET(r1)
+    mfxer   r3
+    stw     r3, XER_OFFSET(r1)
+    mfspr   r3, SPEFSCR
+    stw     r3, SPEFSCR_OFFSET(r1)
+
+    bl      Decrementer_Handler
+
+    mbar
+    wrteei  0
+
+    lwz     r4, R4_OFFSET(r1)
+    lwz     r5, R5_OFFSET(r1)
+    lwz     r6, R6_OFFSET(r1)
+    lwz     r7, R7_OFFSET(r1)
+    lwz     r8, R8_OFFSET(r1)
+    lwz     r9, R9_OFFSET(r1)
+    lwz     r10,R10_OFFSET(r1)
+    lwz     r11,R11_OFFSET(r1)
+    lwz     r12,R12_OFFSET(r1)
+    lwz     r3, LR_OFFSET(r1)
+    mtlr    r3
+    lwz     r3, CTR_OFFSET(r1)
+    mtctr   r3
+    lwz     r3, XER_OFFSET(r1)
+    mtxer   r3
+    lwz     r3, SPEFSCR_OFFSET(r1)
+    mtspr   SPEFSCR, r3
+
+    lis     r3, 0xFFF4
+    ori     r3, r3, 0x8000
+    lwz     r0, PREVIOUS_CPR_OFFSET(r1)
+    stw     r0, 0x08(r3)
+    mbar
+
+    lwz     r3, CR_OFFSET(r1)
+    mtcr    r3
+    lwz     r3, SRR0_OFFSET(r1)
+    mtspr   26, r3                  /* SRR0 */
+    lwz     r3, SRR1_OFFSET(r1)
+    mtspr   27, r3                  /* SRR1 */
+    lwz     r3, R3_OFFSET(r1)
+    lwz     r0, ORIGINAL_R0_OFFSET(r1)
+    addi    r1, r1, INTERRUPT_FRAME_SIZE
+    rfi
+.size CoreDecrementerVector, .-CoreDecrementerVector
 core_exception_wrapper CoreFixedIntervalTimerVector, FixedIntervalTimer_Handler
 core_exception_wrapper CoreWatchdogTimerVector, WatchdogTimer_Handler, CommonCriticalExceptionEntry
 core_exception_wrapper CoreDataTLBErrorVector, DataTLBError_Handler

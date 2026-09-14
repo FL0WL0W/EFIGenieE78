@@ -5,6 +5,25 @@ namespace
 	constexpr std::uint32_t kHalt = 0x00000001U;
 	constexpr std::uint32_t kPCS0 = 0x00010000U;
 	constexpr EmbeddedIOServices::digitalpin_t kOutputCount = 21U;
+
+	std::uint32_t DisableExternalInterrupts()
+	{
+		std::uint32_t machineState;
+		asm volatile(
+			"mfmsr %0\n"
+			"wrteei 0\n"
+			"isync\n"
+			: "=r"(machineState)
+			:
+			: "memory");
+		return machineState;
+	}
+
+	void RestoreExternalInterrupts(const std::uint32_t machineState)
+	{
+		if ((machineState & 0x00008000U) != 0U)
+			asm volatile("wrteei 1\n\tisync" ::: "memory");
+	}
 }
 
 namespace MPC5xxx
@@ -55,9 +74,14 @@ namespace MPC5xxx
 
 	void DelphiDSIDigitalService::Set(std::uint32_t value)
 	{
+		// The 21-bit stream spans two DSPI modules. Commit the shadow and both
+		// ASDR halves as one short operation so an interrupting writer cannot
+		// leave the hardware with halves from different values.
+		const std::uint32_t machineState = DisableExternalInterrupts();
 		_value = value & _outputMask;
 		_leadingModule->ASDR.R = (_value >> 16U) & 0x001FU;
 		_clockingModule->ASDR.R = _value & 0xFFFFU;
+		RestoreExternalInterrupts(machineState);
 	}
 
 	void DelphiDSIDigitalService::InitPin(
@@ -81,7 +105,11 @@ namespace MPC5xxx
 		if (pin >= kOutputCount)
 			return;
 		const std::uint32_t bit = 1UL << pin;
-		Set(value ? _value | bit : _value & ~bit);
+		const std::uint32_t machineState = DisableExternalInterrupts();
+		_value = (value ? _value | bit : _value & ~bit) & _outputMask;
+		_leadingModule->ASDR.R = (_value >> 16U) & 0x001FU;
+		_clockingModule->ASDR.R = _value & 0xFFFFU;
+		RestoreExternalInterrupts(machineState);
 	}
 
 	void DelphiDSIDigitalService::AttachInterrupt(

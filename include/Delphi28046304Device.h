@@ -26,9 +26,7 @@ namespace E78
 		EmbeddedIOServices::ISPIService& _service;
 		std::uint16_t _rotatingDiagnosticCommand = 0x011FU;
 		std::uint16_t _rotatingDiagnosticValue = 0x0000U;
-		volatile bool _discreteOutput9 = false;
-		volatile bool _discreteOutput10 = false;
-		volatile bool _discreteOutput11 = false;
+		std::uint32_t _discreteOutputs = 0U;
 		std::uint8_t _watchdogStartupStage = 0U;
 		std::uint8_t _diagnosticPass = 0U;
 		std::uint8_t _heartbeatPass = 0U;
@@ -60,10 +58,7 @@ namespace E78
 		bool RequestStatus(
 			std::uint16_t controlWord,
 			Delphi28046304ResponseCallback responseCallback = nullptr);
-		bool WriteDiscreteOutput(
-			std::uint8_t bit,
-			bool value,
-			Delphi28046304ResponseCallback responseCallback = nullptr);
+		bool WriteDiscreteOutput(std::uint8_t bit, bool value);
 		bool ReadDiscreteOutput(std::uint8_t bit) const;
 		bool ConfigureChannelGroups(
 			Delphi28046304ResponseCallback responseCallback = nullptr);
