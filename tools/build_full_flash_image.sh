@@ -40,32 +40,45 @@ if (( application_end > flash_size )); then
     exit 1
 fi
 
-if (( application_size != application_region_size )); then
-    printf 'Application is 0x%X bytes; expected the complete 0x%X-byte region with its export footer\n' \
-        "$application_size" "$application_region_size" >&2
-    exit 1
+if (( application_size < 0x1A || application_size > application_region_size )); then
+	printf 'Application size 0x%X is outside the valid compact-image range\n' \
+		"$application_size" >&2
+	exit 1
 fi
 
-footer_hex=$(od -An -tx1 -N24 -j $((application_size - 24)) \
-    "$application_path" | tr -d ' \n')
+header_hex=$(od -An -tx1 -N24 "$application_path" | tr -d ' \n')
+if [[ "${header_hex:0:4}" != "aa55" || "${header_hex:4:4}" != "0001" ]]; then
+	echo "Application is missing compact header AA55/version 1" >&2
+	exit 1
+fi
 for callback_index in 0 1 2 3; do
-    callback_word=${footer_hex:$((callback_index * 8)):8}
-    if [[ "$callback_word" == "00000000" || "$callback_word" == "ffffffff" ]]; then
-        printf 'Invalid bootloader callback %d in application footer: %s\n' \
-            "$callback_index" "$callback_word" >&2
-        exit 1
-    fi
-    callback_address=$((16#$callback_word))
-    if (( callback_address < application_offset ||
-          callback_address >= flash_size - 24 )); then
-        printf 'Bootloader callback %d points outside application code: 0x%08X\n' \
-            "$callback_index" "$callback_address" >&2
-        exit 1
-    fi
+	callback_word=${header_hex:$((8 + callback_index * 8)):8}
+	if [[ "$callback_word" == "00000000" || "$callback_word" == "ffffffff" ]]; then
+		printf 'Invalid bootloader callback %d in application header: %s\n' \
+			"$callback_index" "$callback_word" >&2
+		exit 1
+	fi
+	callback_address=$((16#$callback_word))
+	if (( callback_address < application_offset ||
+		  callback_address >= application_end - 2 )); then
+		printf 'Bootloader callback %d points outside application code: 0x%08X\n' \
+			"$callback_index" "$callback_address" >&2
+		exit 1
+	fi
 done
-if [[ "${footer_hex:32:4}" != "55aa" ]]; then
-    echo "Application footer is missing the 55AA validity marker" >&2
-    exit 1
+
+header_image_size=$((16#${header_hex:40:8}))
+if (( header_image_size != application_size )); then
+	printf 'Header image length is 0x%X; actual application size is 0x%X\n' \
+		"$header_image_size" "$application_size" >&2
+	exit 1
+fi
+
+end_marker=$(od -An -tx1 -N2 -j $((application_size - 2)) \
+	"$application_path" | tr -d ' \n')
+if [[ "$end_marker" != "55aa" ]]; then
+	echo "Compact application is missing its ending 55AA validity marker" >&2
+	exit 1
 fi
 
 if [[ "$output_path" == "$bootloader_path" || "$output_path" == "$application_path" ]]; then
@@ -86,5 +99,5 @@ if (( output_size != flash_size )); then
     exit 1
 fi
 
-printf 'Built %s: bootloader 0x%X bytes, application 0x%X bytes, total 0x%X bytes\n' \
-    "$output_path" "$bootloader_size" "$application_size" "$output_size"
+printf 'Built %s: patched bootloader 0x%X bytes, compact application 0x%X bytes, total 0x%X bytes\n' \
+	"$output_path" "$bootloader_size" "$application_size" "$output_size"

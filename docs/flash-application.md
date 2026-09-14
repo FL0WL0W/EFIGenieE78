@@ -1,11 +1,13 @@
 # E78 flash application build
 
-The flash build is separate from the RAM download kernel. It matches the
-resident E78 bootloader's application contract:
+The flash build is separate from the RAM download kernel. It uses a compact
+application contract implemented by a generated patch to the resident E78
+bootloader:
 
 - image base: `0x00080000`
-- header: `AA55` followed by fourteen `FF` bytes
-- executable entry: `0x00080010`
+- header: `AA55`, version 1, four callback pointers, and the image length
+- executable entry: `0x00080018`
+- validity marker: `55AA` in the final two bytes of the compact image
 - initialized data and BSS: `0x40008000` upward
 - pre-entry callback stack: the resident bootloader's initialized
   cache-as-RAM stack in `0x60000000..0x60003FFF`
@@ -31,38 +33,38 @@ cmake --build build/MPC5566-Flash-Release
 
 Outputs are written to:
 
-- `build/Kernel-E78-Flash.bin` — raw bytes beginning at flash address
+- `build/EFIGenie-E78.bin` — compact raw bytes beginning at flash address
   `0x00080000`
-- `build/Kernel-E78-Flash-Full.bin` — complete `0x300000`-byte flash image
-  for whole-device writers. It contains the stock bootloader from
-  `bootloader.bin` at `0x00000000`, the new application at `0x00080000`, and
-  erased `FF` padding through `0x002FFFFF`, except for the required application
-  validity marker `55AA` at `0x002FFFF8`.
-- `build/Kernel-E78-Flash.hex` — Intel HEX containing absolute addresses
+- `build/EFIGenie-E78-Bootloader.bin` — the stock `bootloader.bin` with only
+  the compact-header ABI, validity, and entry references patched
+- `build/EFIGenie-E78-Full.bin` — complete `0x300000`-byte flash image for
+  whole-device writers. It contains the patched bootloader at `0x00000000`,
+  the compact application at `0x00080000`, and erased `FF` padding afterward.
+- `build/EFIGenie-E78.hex` — Intel HEX containing absolute addresses
 - `build/MPC5566-Flash-Release/firmware.elf` — symbols and load/run addresses
 
 `bootloader.bin` is exactly the first `0x80000` bytes of the stock E78 image.
-The full image therefore preserves the resident bootloader while replacing
-the complete application region.
+It remains unchanged as the input to a reproducible, SHA-256-gated patch step.
 
-At normal startup, the resident bootloader checks the `AA55` marker at
-`0x00080000` and the `55AA` marker at `0x002FFFF8`. It does not calculate a
-checksum across the complete application. The bootloader does perform a
-16-bit additive, zero-sum check over ranges supplied through its diagnostic
-download protocol, but that transfer-time check is not used when an external
-tool writes the complete raw flash image.
+At normal startup, the patched resident bootloader checks `AA55` at
+`0x00080000`, validates the image length at `0x00080014`, and checks `55AA` at
+`0x00080000 + image_length - 2`. The length must be even and between `0x1A`
+and `0x280000`. It does not calculate a checksum across the complete
+application.
 
-The bootloader also treats the final 24 bytes as an application ABI:
+The compact 24-byte application header is:
 
-- `0x002FFFE8`: boot-state validation callback
-- `0x002FFFEC`: boot-parameter block `0x40000758` callback
-- `0x002FFFF0`: application identification callback
-- `0x002FFFF4`: boot-parameter block `0x40000754` callback
-- `0x002FFFF8`: `55AA` validity marker
+- `0x00080000`: `AA55`
+- `0x00080002`: header version `0001`
+- `0x00080004`: boot-state validation callback
+- `0x00080008`: boot-parameter block `0x40000758` callback
+- `0x0008000C`: application identification callback
+- `0x00080010`: boot-parameter block `0x40000754` callback
+- `0x00080014`: complete compact image length, including the ending marker
 
 The callbacks are implemented without dependencies on the application C
 runtime because the bootloader can invoke them before the application entry
-at `0x00080010`. Their boot-parameter workspace is also initialized with
+at `0x00080018`. Their boot-parameter workspace is also initialized with
 aligned 64-bit writes so the callbacks are safe immediately after power-on.
 
 When entering programming mode, the application restores r1 to the locked
@@ -72,5 +74,4 @@ cache-as-RAM stack at `0x60003FF0` before branching to the resident
 handoff would erase the bootloader's active frames and cause an immediate
 reset back into the application.
 
-The original `MPC5566-Release` preset and `Kernel-E78.bin` RAM image remain
-independent.
+The RAM-download kernel remains independent.

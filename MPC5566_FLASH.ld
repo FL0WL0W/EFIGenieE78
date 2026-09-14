@@ -1,4 +1,4 @@
-/* E78 flash application image.  The resident bootloader calls 0x00080010. */
+/* E78 flash application image. The patched resident bootloader calls 0x00080018. */
 ENTRY(_start)
 
 __HEAP_SIZE  = 16000;
@@ -24,18 +24,17 @@ SECTIONS
 {
 	.application_header ORIGIN(FLASH) :
 	{
-		/* Stock E78 layout: AA55 followed by fourteen erased bytes. */
+		/* Compact EFIGenie application header consumed by the patched bootloader. */
 		SHORT(0xAA55)
-		SHORT(0xFFFF)
-		SHORT(0xFFFF)
-		SHORT(0xFFFF)
-		SHORT(0xFFFF)
-		SHORT(0xFFFF)
-		SHORT(0xFFFF)
-		SHORT(0xFFFF)
+		SHORT(0x0001) /* Header format version. */
+		LONG(E78BootValidateApplicationState)
+		LONG(E78BootGetParameterBlock758)
+		LONG(E78BootGetApplicationIdentifier)
+		LONG(E78BootGetParameterBlock754)
+		LONG(__APPLICATION_IMAGE_END - ORIGIN(FLASH))
 	} > FLASH
 
-	.startup 0x00080010 : ALIGN(4)
+	.startup 0x00080018 : ALIGN(4)
 	{
 		KEEP(*(.startup))
 	} > FLASH
@@ -150,6 +149,13 @@ SECTIONS
 	__SDATA_SIZE = SIZEOF(.sdata);
 	PROVIDE(_SDA_BASE_ = ADDR(.sdata) + 0x8000);
 
+	/* Written last in the compact image and located through the header length. */
+	.application_validity : ALIGN(2)
+	{
+		SHORT(0x55AA)
+		__APPLICATION_IMAGE_END = .;
+	} > FLASH
+
 	.bss (NOLOAD) : ALIGN(8)
 	{
 		__BSS_START = .;
@@ -179,27 +185,11 @@ SECTIONS
 		__SP_INIT = .;
 	} > SRAM_RUNTIME
 
-	/* ABI exported by the application to the resident E78 bootloader. */
-	.application_exports 0x002FFFE8 :
-	{
-		LONG(E78BootValidateApplicationState)
-		LONG(E78BootGetParameterBlock758)
-		LONG(E78BootGetApplicationIdentifier)
-		LONG(E78BootGetParameterBlock754)
-		SHORT(0x55AA)
-		BYTE(0xFF)
-		BYTE(0xFF)
-		BYTE(0xFF)
-		BYTE(0xFF)
-		BYTE(0xFF)
-		BYTE(0xFF)
-	} > FLASH
-
 	ASSERT(__SP_INIT <= ORIGIN(SRAM_RUNTIME) + LENGTH(SRAM_RUNTIME), "runtime heap/stack exceeds working SRAM window")
 	ASSERT(__APPLICATION_DATA_SRAM_END <= ORIGIN(SRAM_DATA) + LENGTH(SRAM_DATA), "application data exceeds working SRAM window")
-	ASSERT(ADDR(.startup) == 0x00080010, "bootloader application entry moved")
+	ASSERT(ADDR(.startup) == 0x00080018, "patched-bootloader application entry moved")
 	ASSERT((ADDR(.intc_vector_table) & 0xFFFF) == 0, "interrupt vectors are not 64-KiB aligned")
 	ASSERT(SIZEOF(.intc_vector_table) <= 0x10000, "interrupt vectors exceed one IVPR region")
-	ASSERT(ADDR(.application_exports) == 0x002FFFE8, "bootloader export table moved")
-	ASSERT(SIZEOF(.application_exports) == 0x18, "bootloader export table has wrong size")
+	ASSERT(SIZEOF(.application_header) == 0x18, "compact application header has wrong size")
+	ASSERT((__APPLICATION_IMAGE_END - ORIGIN(FLASH)) <= LENGTH(FLASH), "application image exceeds flash")
 }

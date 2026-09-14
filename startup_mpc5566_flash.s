@@ -192,8 +192,8 @@ CallFunctionArrayComplete:
 	addi	r1, r1, 24
 	blr
 
-;# Application callbacks exported to the resident bootloader through the
-;# pointer table at 0x002FFFE8.  These routines can be called before _start,
+;# Application callbacks exported to the patched resident bootloader through
+;# the compact header at 0x00080004. These routines can be called before _start,
 ;# so they must not depend on the application's r2/r13, data, BSS, or heap.
 	.section .boot_callback_code, "ax"
 	.align 2

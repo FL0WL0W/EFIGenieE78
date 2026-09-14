@@ -4,7 +4,7 @@
         {
             "name": "MPC5566-Flash-Release",
             "displayName": "MPC5566 E78 Flash Application",
-            "description": "Book E application stored at 0x80000 and entered by the E78 bootloader at 0x80010",
+            "description": "Book E application with a compact header at 0x80000 and entry at 0x80018",
             "generator": "Unix Makefiles",
             "binaryDir": "${sourceDir}/build/MPC5566-Flash-Release",
             "cacheVariables": {

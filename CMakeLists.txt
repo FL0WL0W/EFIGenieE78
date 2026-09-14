@@ -46,12 +46,45 @@ set(MPC5566_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/MPC5566_FLASH.ld")
 set(MPC5566_IMAGE_BASENAME "EFIGenie-E78")
 set(MPC5566_BOOTLOADER_IMAGE
     "${CMAKE_SOURCE_DIR}/bootloader.bin"
-    CACHE FILEPATH "Bootloader used at the beginning of the full flash image")
+    CACHE FILEPATH "Unmodified stock bootloader used as the patch input")
+
+set(BOOTLOADER_HEADER_PATCH_SOURCE
+    ${CMAKE_SOURCE_DIR}/tools/bootloader_application_header_patch.s)
+set(BOOTLOADER_HEADER_PATCH_SCRIPT
+    ${CMAKE_SOURCE_DIR}/tools/patch_bootloader_application_header.sh)
+set(BOOTLOADER_HEADER_PATCH_OBJECT
+    ${CMAKE_BINARY_DIR}/bootloader_application_header_patch.o)
+set(BOOTLOADER_HEADER_PATCH_BINARY
+    ${CMAKE_BINARY_DIR}/bootloader_application_header_patch.bin)
+set(PATCHED_BOOTLOADER_IMAGE
+    ${PROJECT_SOURCE_DIR}/build/${MPC5566_IMAGE_BASENAME}-Bootloader.bin)
+
+find_program(BASH_EXECUTABLE bash REQUIRED)
+add_custom_command(
+    OUTPUT ${PATCHED_BOOTLOADER_IMAGE}
+    COMMAND ${CMAKE_ASM_COMPILER} -c -mcpu=e200z7 -mbig -mno-vle -mregnames
+        ${BOOTLOADER_HEADER_PATCH_SOURCE}
+        -o ${BOOTLOADER_HEADER_PATCH_OBJECT}
+    COMMAND ${CMAKE_OBJCOPY} -O binary -j .text
+        ${BOOTLOADER_HEADER_PATCH_OBJECT}
+        ${BOOTLOADER_HEADER_PATCH_BINARY}
+    COMMAND ${BASH_EXECUTABLE}
+        ${BOOTLOADER_HEADER_PATCH_SCRIPT}
+        ${MPC5566_BOOTLOADER_IMAGE}
+        ${BOOTLOADER_HEADER_PATCH_BINARY}
+        ${PATCHED_BOOTLOADER_IMAGE}
+    DEPENDS
+        ${MPC5566_BOOTLOADER_IMAGE}
+        ${BOOTLOADER_HEADER_PATCH_SOURCE}
+        ${BOOTLOADER_HEADER_PATCH_SCRIPT}
+    COMMENT "Patching the stock E78 bootloader for the compact application header")
+add_custom_target(patched_bootloader ALL DEPENDS ${PATCHED_BOOTLOADER_IMAGE})
 
 set(SRC_FILES ${USER_CSOURCES} ${USER_CXXSOURCES} ${EmbeddedIOService_SOURCES}
     ${MPC5566_STARTUP_SOURCE}
     ${MPC5566_INTERRUPT_SOURCE})
 add_executable(firmware.elf ${SRC_FILES})
+add_dependencies(firmware.elf patched_bootloader)
 set_property(TARGET firmware.elf PROPERTY LINK_DEPENDS ${MPC5566_LINKER_SCRIPT})
 
 target_compile_definitions(firmware.elf PRIVATE MPC5566)
@@ -64,17 +97,16 @@ add_custom_command(TARGET firmware.elf POST_BUILD
         COMMAND ${CMAKE_OBJCOPY} ARGS -O binary --gap-fill 0xFF $<TARGET_FILE:firmware.elf> ${BIN_FILE}
         COMMENT "Building ${HEX_FILE} \nBuilding ${BIN_FILE}")
 
-find_program(BASH_EXECUTABLE bash REQUIRED)
 set(FULL_FLASH_IMAGE_SCRIPT ${CMAKE_SOURCE_DIR}/tools/build_full_flash_image.sh)
 set_property(TARGET firmware.elf APPEND PROPERTY LINK_DEPENDS
-    ${MPC5566_BOOTLOADER_IMAGE}
+    ${PATCHED_BOOTLOADER_IMAGE}
     ${FULL_FLASH_IMAGE_SCRIPT})
 set(FULL_FLASH_BIN_FILE
     ${PROJECT_SOURCE_DIR}/build/${MPC5566_IMAGE_BASENAME}-Full.bin)
 add_custom_command(TARGET firmware.elf POST_BUILD
     COMMAND ${BASH_EXECUTABLE}
         ${FULL_FLASH_IMAGE_SCRIPT}
-        ${MPC5566_BOOTLOADER_IMAGE}
+        ${PATCHED_BOOTLOADER_IMAGE}
         ${BIN_FILE}
         ${FULL_FLASH_BIN_FILE}
         0x80000
