@@ -14,7 +14,7 @@
                 "CMAKE_C_FLAGS": "-DNDEBUG -O3 -Wall -fmessage-length=0 -fstrict-volatile-bitfields -ffunction-sections -fdata-sections -mcpu=e200z7 -specs=nano.specs -mbig -mno-vle -mregnames -mhard-float -fmerge-all-constants -fno-ident",
                 "CMAKE_CXX_FLAGS": "-DNDEBUG -O3 -Wall -fmessage-length=0 -fstrict-volatile-bitfields -ffunction-sections -fdata-sections -mcpu=e200z7 -specs=nano.specs -mbig -mno-vle -mregnames -mhard-float -fno-exceptions -fno-rtti -fmerge-all-constants -fno-ident",
                 "CMAKE_ASM_FLAGS": "-DNDEBUG -mcpu=e200z7 -mbig -mno-vle -mregnames",
-                "CMAKE_EXE_LINKER_FLAGS": "-Wl,--gc-sections -mcpu=e200z7 -specs=nosys.specs -mbig -mno-vle -mhard-float -T\"${sourceDir}/MPC5566_FLASH.ld\""
+                "CMAKE_EXE_LINKER_FLAGS": "-Wl,--gc-sections -Wl,-u,_printf_float -mcpu=e200z7 -specs=nosys.specs -mbig -mno-vle -mhard-float -T\"${sourceDir}/MPC5566_FLASH.ld\""
             }
         }
     ]

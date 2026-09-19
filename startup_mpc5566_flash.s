@@ -314,8 +314,8 @@ E78BootValidateApplicationState:
 	and.	r5, r5, r6
 	beq	E78BootPerformNormalValidation
 
-	lis	r4, 0x4002
-	addi	r4, r4, -16		;# 0x4001FFF0
+	lis	r4, __BOOT_UPLOAD_REQUEST@h
+	ori	r4, r4, __BOOT_UPLOAD_REQUEST@l
 	lwz	r5, 0(r4)
 	lis	r6, 0x4555		;# "EUPL"
 	ori	r6, r6, 0x504C
@@ -426,8 +426,8 @@ ExitToBootloaderUploadRoutine:
 	wrteei	0
 ;# Write the magic and its complement into one aligned 64-bit ECC granule.
 ;# r30/r31 are intentionally not preserved because this function cannot return.
-	lis	r29, 0x4002
-	addi	r29, r29, -16		;# 0x4001FFF0
+	lis	r29, __BOOT_UPLOAD_REQUEST@h
+	ori	r29, r29, __BOOT_UPLOAD_REQUEST@l
 	lis	r30, 0x4555		;# "EUPL"
 	ori	r30, r30, 0x504C
 	lis	r31, 0xBAAA

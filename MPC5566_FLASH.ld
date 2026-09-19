@@ -1,24 +1,23 @@
 /* E78 flash application image. The patched resident bootloader calls 0x00080018. */
 ENTRY(_start)
 
-__HEAP_SIZE  = 16000;
-__STACK_SIZE = 16000;
+__HEAP_SIZE  = 32000;
+__STACK_SIZE = 32000;
+_config = 0x2E0000;
 
 MEMORY
 {
-	/* MPC5566 flash ends at 0x002FFFFF. */
-	FLASH (rx)  : ORIGIN = 0x00080000, LENGTH = 0x00280000
-	/* Match the SRAM windows used by the proven RAM-download kernel. */
-	SRAM_RUNTIME (rwx) : ORIGIN = 0x40008000, LENGTH = 0x00008000
-	SRAM_DATA    (rwx) : ORIGIN = 0x40016D10, LENGTH = 0x000052F0
+	FLASH (rx)  : ORIGIN = 0x00080000, LENGTH = 0x00260000
+	SRAM (rwx) : ORIGIN = 0x40000000, LENGTH = 0x00020000
 }
 
-__APPLICATION_RUNTIME_SRAM_START = ORIGIN(SRAM_RUNTIME);
-__APPLICATION_RUNTIME_SRAM_END = ORIGIN(SRAM_RUNTIME) + LENGTH(SRAM_RUNTIME);
-__APPLICATION_DATA_SRAM_START = ORIGIN(SRAM_DATA);
 /* Complete SRAM available to the application above the bootloader window. */
-__APPLICATION_SRAM_START = 0x40008000;
+__APPLICATION_SRAM_START = 0x40000000;
 __APPLICATION_SRAM_END = 0x40020000;
+/* Last aligned ECC granule is retained across the upload-request reset. */
+__BOOT_UPLOAD_REQUEST = __APPLICATION_SRAM_END - 0x10;
+/* The PowerPC stack grows toward lower addresses from this reserved region. */
+__STACK_REGION_START = __BOOT_UPLOAD_REQUEST - __STACK_SIZE;
 
 SECTIONS
 {
@@ -142,7 +141,7 @@ SECTIONS
 		*(.got2)
 		*(.got2.*)
 		__DATA_END = .;
-	} > SRAM_DATA AT> FLASH
+	} > SRAM AT> FLASH
 	__DATA_LOAD = LOADADDR(.data);
 	__DATA_SIZE = SIZEOF(.data);
 
@@ -151,7 +150,7 @@ SECTIONS
 		__SDATA_START__ = .;
 		*(.sdata)
 		*(.sdata.*)
-	} > SRAM_DATA AT> FLASH
+	} > SRAM AT> FLASH
 	__SDATA_LOAD = LOADADDR(.sdata);
 	__SDATA_SIZE = SIZEOF(.sdata);
 	PROVIDE(_SDA_BASE_ = ADDR(.sdata) + 0x8000);
@@ -172,28 +171,29 @@ SECTIONS
 		*(.bss.*)
 		*(COMMON)
 		__BSS_END = .;
-	} > SRAM_DATA
+	} > SRAM
 	__BSS_SIZE = SIZEOF(.bss);
 	__APPLICATION_DATA_SRAM_END = ALIGN(__BSS_END, 8);
 
-	.heap ORIGIN(SRAM_RUNTIME) (NOLOAD) : ALIGN(16)
+	.heap (NOLOAD) : ALIGN(16)
 	{
 		__HEAP = .;
 		PROVIDE(_end = .);
 		PROVIDE(end = .);
 		. += __HEAP_SIZE;
 		__HEAP_END = .;
-	} > SRAM_RUNTIME
+	} > SRAM
 
-	.stack (NOLOAD) : ALIGN(16)
+	.stack __STACK_REGION_START (NOLOAD) : ALIGN(16)
 	{
 		__STACK_BOTTOM = .;
 		. += __STACK_SIZE;
 		__SP_INIT = .;
-	} > SRAM_RUNTIME
+	} > SRAM
 
-	ASSERT(__SP_INIT <= ORIGIN(SRAM_RUNTIME) + LENGTH(SRAM_RUNTIME), "runtime heap/stack exceeds working SRAM window")
-	ASSERT(__APPLICATION_DATA_SRAM_END <= ORIGIN(SRAM_DATA) + LENGTH(SRAM_DATA), "application data exceeds working SRAM window")
+	ASSERT(__APPLICATION_DATA_SRAM_END <= __HEAP, "application data overlaps the heap")
+	ASSERT(__HEAP_END <= __STACK_BOTTOM, "heap and stack regions overlap")
+	ASSERT(__SP_INIT == __BOOT_UPLOAD_REQUEST, "stack is not immediately below the boot upload marker")
 	ASSERT(ADDR(.startup) == 0x00080018, "patched-bootloader application entry moved")
 	ASSERT((ADDR(.intc_vector_table) & 0xFFFF) == 0, "interrupt vectors are not 64-KiB aligned")
 	ASSERT(SIZEOF(.intc_vector_table) <= 0x10000, "interrupt vectors exceed one IVPR region")

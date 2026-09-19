@@ -11,15 +11,15 @@ set(EmbeddedIOServicesHardwareAbstraction_Path ${LIBRARIES_DIR}/EmbeddedIOServic
 include(FetchContent)
 
 FetchContent_Declare(
-    EmbeddedIOServices
-    GIT_REPOSITORY https://github.com/FL0WL0W/EmbeddedIOServices
+    EFIGenie
+    GIT_REPOSITORY https://github.com/FL0WL0W/EFIGenie
     GIT_TAG        main
     GIT_PROGRESS   TRUE
     GIT_SHALLOW    TRUE
-    SOURCE_DIR  ${LIBRARIES_DIR}/EmbeddedIOServices
+    SOURCE_DIR  ${LIBRARIES_DIR}/EFIGenie
 )
 
-FetchContent_MakeAvailable(EmbeddedIOServices)
+FetchContent_MakeAvailable(EFIGenie)
 
 include_directories(include)
 include_directories(${EmbeddedIOServicesHardwareAbstraction_Path}/include)
@@ -88,7 +88,7 @@ add_dependencies(firmware.elf patched_bootloader)
 set_property(TARGET firmware.elf PROPERTY LINK_DEPENDS ${MPC5566_LINKER_SCRIPT})
 
 target_compile_definitions(firmware.elf PRIVATE MPC5566)
-target_link_libraries(firmware.elf EmbeddedIOServices)
+target_link_libraries(firmware.elf EFIGenie)
 
 set(HEX_FILE ${PROJECT_SOURCE_DIR}/build/${MPC5566_IMAGE_BASENAME}.hex)
 set(BIN_FILE ${PROJECT_SOURCE_DIR}/build/${MPC5566_IMAGE_BASENAME}.bin)

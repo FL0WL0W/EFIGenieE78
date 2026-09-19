@@ -107,13 +107,6 @@ namespace
 		false,
 	};
 
-	std::uint8_t InitializeFlexCANA()
-	{
-		return MPC5xxx::MPC5xxxFlexCAN2Service::Initialize(
-			CAN_A,
-			MPC5xxx::CANBaudRate::Kbps500);
-	}
-
 	void ConfigureFlexCANAInterrupts()
 	{
 		CAN_A.IMRH.R = 0U;
@@ -158,12 +151,7 @@ namespace E78
 		  _delphi28046304SPI(
 			  &DSPI_B,
 			  DelphiConfiguration),
-		  _canBusNumber(InitializeFlexCANA()),
 		  TimerService(MPC5xxx::MPC5xxxTimerService::Instance()),
-		  ISOTPService(
-			  MPC5xxx::MPC5xxxFlexCAN2Service::Instance().GetISOTPService(
-				  {0x7E0U, _canBusNumber},
-				  {0x7E8U, _canBusNumber})),
 		  MPCDigitalService(),
 		  DelphiDigitalOutputService(
 			  &DSPI_A,

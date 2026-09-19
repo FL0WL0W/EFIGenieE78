@@ -41,7 +41,6 @@ namespace E78
 
 	public:
 		MPC5xxx::MPC5xxxTimerService& TimerService;
-		EmbeddedIOServices::ICommunicationService* const ISOTPService;
 		MPC5xxx::MPC5xxxDigitalService MPCDigitalService;
 		MPC5xxx::DelphiDSIDigitalService DelphiDigitalOutputService;
 		ON20845_007Device ON20845;
