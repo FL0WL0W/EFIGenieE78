@@ -7,11 +7,6 @@
 
 namespace
 {
-	constexpr std::uint16_t FlexCANARxVectorFirst = 155U;
-	constexpr std::uint16_t FlexCANARxHighVector = 171U;
-	constexpr std::uint16_t FlexCANATxHighVector = 172U;
-	constexpr std::uint8_t FlexCANInterruptPriority = 1U;
-
 	struct StockGPIOOutput
 	{
 		std::uint16_t pin;
@@ -107,28 +102,6 @@ namespace
 		false,
 	};
 
-	void ConfigureFlexCANAInterrupts()
-	{
-		CAN_A.IMRH.R = 0U;
-		CAN_A.IMRL.R = 0U;
-		CAN_A.CR.B.BOFFMSK = 0U;
-		CAN_A.CR.B.ERRMSK = 0U;
-		CAN_A.CR.B.TWRNMSK = 0U;
-		CAN_A.CR.B.RWRNMSK = 0U;
-		CAN_A.MCR.B.WRNEN = 0U;
-		CAN_A.IFRH.R = 0xFFFFFFFFU;
-		CAN_A.IFRL.R = 0xFFFFFFFFU;
-		for (std::uint16_t vector = FlexCANARxVectorFirst;
-			vector < FlexCANARxVectorFirst + 16U;
-			++vector)
-		{
-			INTC.PSR[vector].R = FlexCANInterruptPriority;
-		}
-		INTC.PSR[FlexCANARxHighVector].R = FlexCANInterruptPriority;
-		INTC.PSR[FlexCANATxHighVector].R = FlexCANInterruptPriority;
-		CAN_A.IMRL.R = 0xFFFFFFFFU;
-		CAN_A.IMRH.R = 0xFFFFFFFFU;
-	}
 }
 
 namespace E78
@@ -144,15 +117,18 @@ namespace E78
 		: _systemClock(),
 		  _on20845SPI(
 			  &DSPI_D,
-			  ON20845Configuration),
+			  ON20845Configuration,
+			  2U),
 		  _mpmSPI(
 			  &DSPI_D,
-			  MPMConfiguration),
+			  MPMConfiguration,
+			  2U),
 		  _delphi28046304SPI(
 			  &DSPI_B,
-			  DelphiConfiguration),
+			  DelphiConfiguration,
+			  2U),
 		  TimerService(22U, 3U),
-		  MPCDigitalService(),
+		  MPCDigitalService(4U),
 		  DelphiDigitalOutputService(
 			  &DSPI_A,
 			  &DSPI_C,
@@ -202,7 +178,6 @@ namespace E78
 		SIU.PCR[214U].R = 0x0200U; // Enable the dedicated ENGCLK output buffer.
 		SIU.ECCR.R = 0x00000801U;  // ENGCLK /16; retain CLKOUT divide-by-2.
 
-		ConfigureFlexCANAInterrupts();
 		MPM.InitializeNormalMode();
 	}
 

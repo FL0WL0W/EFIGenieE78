@@ -91,7 +91,8 @@ extern "C" int main()
 
 	const uint8_t canBusA = MPC5xxx::MPC5xxxFlexCAN2Service::Initialize(
 			CAN_A,
-			MPC5xxx::CANBaudRate::Kbps500);
+			MPC5xxx::CANBaudRate::Kbps500,
+			1U);
 	ICommunicationService* const isotp = MPC5xxx::MPC5xxxFlexCAN2Service::Instance().GetISOTPService(
 				  {0x7E0U, canBusA},
 				  {0x7E8U, canBusA});
