@@ -8,7 +8,7 @@
 #include "MPC5xxxDigitalService.h"
 #include "MPC5xxxFlexCAN2Service.h"
 #include "MPC5xxxSPIService.h"
-#include "MPC5xxxTimerService.h"
+#include "MPC5xxxEMIOSTimerService.h"
 #include "MPC55xxSystemClockService.h"
 #include "MPMDevice.h"
 #include "MPMSPIService.h"
@@ -40,7 +40,7 @@ namespace E78
 		void ContinueAfterRevisionPrefix();
 
 	public:
-		MPC5xxx::MPC5xxxTimerService& TimerService;
+		MPC5xxx::MPC5xxxEMIOSTimerService TimerService;
 		MPC5xxx::MPC5xxxDigitalService MPCDigitalService;
 		MPC5xxx::DelphiDSIDigitalService DelphiDigitalOutputService;
 		ON20845_007Device ON20845;

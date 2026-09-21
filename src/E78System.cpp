@@ -151,7 +151,7 @@ namespace E78
 		  _delphi28046304SPI(
 			  &DSPI_B,
 			  DelphiConfiguration),
-		  TimerService(MPC5xxx::MPC5xxxTimerService::Instance()),
+		  TimerService(22U, 3U),
 		  MPCDigitalService(),
 		  DelphiDigitalOutputService(
 			  &DSPI_A,
@@ -171,8 +171,6 @@ namespace E78
 			  DelphiDigitalOutputService,
 			  Delphi28046304)
 	{
-		MPC5xxx::MPC5xxxTimerService::Initialize();
-
 		// E78 board-specific SPI routing, copied from the stock application's
 		// PCR image. E78System owns every pad it uses and does not depend on
 		// state inherited from the bootloader.
