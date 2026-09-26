@@ -73,6 +73,8 @@ namespace E78
 			[wordCount, responseCallback](
 				std::uint8_t* received,
 				std::size_t receivedLength) mutable {
+				if (!responseCallback)
+					return;
 				constexpr std::size_t MaximumResponseWords = 19U;
 				std::uint16_t response[MaximumResponseWords] = {};
 				const std::size_t availableWords = receivedLength / 2U;
@@ -82,8 +84,7 @@ namespace E78
 					response[i] = static_cast<std::uint16_t>(
 						(static_cast<std::uint16_t>(received[i * 2U]) << 8U) |
 						received[i * 2U + 1U]);
-				if (responseCallback)
-					responseCallback(response, responseWords);
+				responseCallback(response, responseWords);
 			});
 	}
 

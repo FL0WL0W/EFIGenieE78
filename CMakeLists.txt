@@ -89,6 +89,9 @@ set_property(TARGET firmware.elf PROPERTY LINK_DEPENDS ${MPC5566_LINKER_SCRIPT})
 
 target_compile_definitions(firmware.elf PRIVATE MPC5566)
 target_link_libraries(firmware.elf EFIGenie)
+target_link_options(firmware.elf PRIVATE
+    "LINKER:--wrap=_malloc_r"
+    "LINKER:--wrap=_free_r")
 
 set(HEX_FILE ${PROJECT_SOURCE_DIR}/build/${MPC5566_IMAGE_BASENAME}.hex)
 set(BIN_FILE ${PROJECT_SOURCE_DIR}/build/${MPC5566_IMAGE_BASENAME}.bin)

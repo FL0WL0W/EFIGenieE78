@@ -20,8 +20,7 @@ namespace E78
 			0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
 			0xFFU, 0x53U, 0x10U, 0x00U, 0x09U, 0xB2U,
 		};
-		volatile std::uint8_t _response[PacketLength] = {};
-		bool _transferPending = false;
+		volatile bool _transferPending = false;
 
 		std::uint8_t ComputeXor() const;
 
@@ -31,9 +30,6 @@ namespace E78
 
 		void InitializeNormalMode();
 		void ServiceNormalMode();
-
-		const volatile std::uint8_t* TransmitPacket() const { return _transmit; }
-		const volatile std::uint8_t* ResponsePacket() const { return _response; }
 	};
 }
 

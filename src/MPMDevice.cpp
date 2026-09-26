@@ -40,14 +40,11 @@ namespace E78
 		std::uint8_t packet[PacketLength] = {};
 		for (std::size_t i = 0U; i < PacketLength; ++i)
 			packet[i] = _transmit[i];
+		_transferPending = true;
 		if (!_service.Transfer(
 			packet,
 			sizeof(packet),
 			[this](std::uint8_t* response, std::size_t length) {
-				const std::size_t bytesToCopy =
-					length < PacketLength ? length : PacketLength;
-				for (std::size_t i = 0U; i < bytesToCopy; ++i)
-					_response[i] = response[i];
 				_transferPending = false;
 			}))
 		{
@@ -55,8 +52,7 @@ namespace E78
 			// the rolling opcode so the next accepted frame still alternates.
 			_transmit[0] = previousOpcode;
 			_transmit[17] = previousChecksum;
-			return;
+			_transferPending = false;
 		}
-		_transferPending = true;
 	}
 }
