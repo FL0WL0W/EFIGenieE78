@@ -4,9 +4,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 
 namespace
 {
+	constexpr std::uint32_t ServiceWatchdogPeriodMilliseconds = 3U;
+
 	struct StockGPIOOutput
 	{
 		std::uint16_t pin;
@@ -118,17 +121,21 @@ namespace E78
 		  _on20845SPI(
 			  &DSPI_D,
 			  ON20845Configuration,
-			  2U),
+			  3U),
 		  _mpmSPI(
 			  &DSPI_D,
 			  MPMConfiguration,
-			  2U),
+			  3U),
 		  _delphi28046304SPI(
 			  &DSPI_B,
 			  DelphiConfiguration,
-			  2U),
-		  TimerService(22U, 3U),
-		  MPCDigitalService(4U),
+			  3U),
+		  _serviceWatchdogTask([this ]() {
+			ServiceWatchdogs();
+		}),
+		  TimerService(22U, 4U),
+		  E78ServiceTimer(23U, 2U),
+		  MPCDigitalService(5U),
 		  DelphiDigitalOutputService(
 			  &DSPI_A,
 			  &DSPI_C,
@@ -183,10 +190,9 @@ namespace E78
 
 	void E78System::Initialize()
 	{
-		if (_startupStarted)
-			return;
-		_startupStarted = true;
 		TimerService.Calibrate();
+		E78ServiceTimer.Calibrate();
+		E78ServiceTimer.ScheduleTask(&_serviceWatchdogTask, E78ServiceTimer.GetTick());
 		Delphi28046304.RequestIdentification(
 			[this](const std::uint16_t*, std::size_t) {
 				ContinueAfterFirstIdentification();
@@ -242,22 +248,26 @@ namespace E78
 			});
 	}
 
-	void E78System::Service()
+	void ServiceCoreWatchdog()
 	{
-		// FIFO progress is interrupt-driven. These calls only retire completed
-		// transfers and execute their callbacks in the main context.
-		MPC5xxx::MPC5xxxSPIService::Service(DSPI_B);
-		MPC5xxx::MPC5xxxSPIService::Service(DSPI_D);
+		const std::uint32_t watchdogService = 0x40000000U;
+		asm volatile(
+			"mtspr 336, %0\n"
+			:
+			: "r"(watchdogService)
+			: "memory");
 	}
 
-	static uint32_t everyFourthCall = 0U;
 	void E78System::ServiceWatchdogs()
 	{
 		ON20845.ServiceWatchdog();
+		if ((_serviceWatchdogCallCount % 4U) == 0U)
+			MPM.ServiceNormalMode();
 		if (_startupComplete)
 			Delphi28046304.ServiceWatchdog();
-		if(everyFourthCall %4 ==0)
-			MPM.ServiceNormalMode();
-		everyFourthCall++;
+		ServiceCoreWatchdog();
+		++_serviceWatchdogCallCount;
+		const std::uint32_t periodTicks = (E78ServiceTimer.GetTicksPerSecond() / 1000U) * ServiceWatchdogPeriodMilliseconds;
+		E78ServiceTimer.ScheduleTask(&_serviceWatchdogTask, E78ServiceTimer.GetTick() + periodTicks);
 	}
 }

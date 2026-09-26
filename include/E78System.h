@@ -30,9 +30,9 @@ namespace E78
 		MPC5xxx::MPC5xxxSPIService _on20845SPI;
 		MPMSPIService _mpmSPI;
 		MPC5xxx::MPC5xxxSPIService _delphi28046304SPI;
-		std::uint8_t _canBusNumber;
-		bool _startupStarted = false;
 		bool _startupComplete = false;
+		std::uint32_t _serviceWatchdogCallCount = 0U;
+		EmbeddedIOServices::Task _serviceWatchdogTask;
 
 		void ContinueAfterFirstIdentification();
 		void ContinueAfterSecondIdentification();
@@ -41,6 +41,7 @@ namespace E78
 
 	public:
 		MPC5xxx::MPC5xxxEMIOSTimerService TimerService;
+		MPC5xxx::MPC5xxxEMIOSTimerService E78ServiceTimer;
 		MPC5xxx::MPC5xxxDigitalService MPCDigitalService;
 		MPC5xxx::DelphiDSIDigitalService DelphiDigitalOutputService;
 		ON20845_007Device ON20845;
@@ -51,7 +52,6 @@ namespace E78
 		E78System();
 
 		void Initialize();
-		void Service();
 		void ServiceWatchdogs();
 	};
 }
