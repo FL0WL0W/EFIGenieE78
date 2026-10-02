@@ -37,14 +37,12 @@ namespace E78
 		_transmit[0] = previousOpcode == 0x19U ? 0x06U : 0x19U;
 		_transmit[17] = ComputeXor();
 
-		std::uint8_t packet[PacketLength] = {};
-		for (std::size_t i = 0U; i < PacketLength; ++i)
-			packet[i] = _transmit[i];
 		_transferPending = true;
 		if (!_service.Transfer(
-			packet,
-			sizeof(packet),
-			[this](std::uint8_t* response, std::size_t length) {
+			_transmit,
+			_receive,
+			sizeof(_transmit),
+			[this]() {
 				_transferPending = false;
 			}))
 		{

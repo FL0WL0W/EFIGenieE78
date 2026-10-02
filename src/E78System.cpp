@@ -121,15 +121,18 @@ namespace E78
 		  _on20845SPI(
 			  &DSPI_D,
 			  ON20845Configuration,
-			  3U),
+			  3U,
+			  0U),
 		  _mpmSPI(
 			  &DSPI_D,
 			  MPMConfiguration,
-			  3U),
+			  3U,
+			  MPMDevice::PacketLength),
 		  _delphi28046304SPI(
 			  &DSPI_B,
 			  DelphiConfiguration,
-			  3U),
+			  3U,
+			  Delphi28046304Device::MaximumTransferLength),
 		  _serviceWatchdogTask([this ]() {
 			ServiceWatchdogs();
 		}),

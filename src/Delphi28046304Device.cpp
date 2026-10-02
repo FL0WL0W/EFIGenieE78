@@ -56,36 +56,52 @@ namespace E78
 		std::size_t wordCount,
 		Delphi28046304ResponseCallback responseCallback)
 	{
-		constexpr std::size_t MaximumWords = 19U;
 		if (transmit == nullptr || wordCount == 0U || wordCount > MaximumWords)
 			return false;
 
-		std::uint8_t bytes[MaximumWords * 2U] = {};
+		TransferSlot* slot = nullptr;
+		for (TransferSlot& candidate : _transferSlots)
+		{
+			if (candidate.InUse)
+				continue;
+			candidate.InUse = true;
+			slot = &candidate;
+			break;
+		}
+		if (slot == nullptr)
+			return false;
+
 		for (std::size_t i = 0U; i < wordCount; ++i)
 		{
-			bytes[i * 2U] = static_cast<std::uint8_t>(transmit[i] >> 8U);
-			bytes[i * 2U + 1U] = static_cast<std::uint8_t>(transmit[i]);
+			slot->Transmit[i * 2U] =
+				static_cast<std::uint8_t>(transmit[i] >> 8U);
+			slot->Transmit[i * 2U + 1U] =
+				static_cast<std::uint8_t>(transmit[i]);
 		}
 
-		return _service.Transfer(
-			bytes,
-			wordCount * 2U,
-			[wordCount, responseCallback](
-				std::uint8_t* received,
-				std::size_t receivedLength) mutable {
+		if (_service.Transfer(
+				slot->Transmit,
+				slot->Receive,
+				wordCount * 2U,
+				[slot, wordCount, responseCallback]() mutable {
 				if (!responseCallback)
+				{
+					slot->InUse = false;
 					return;
+				}
 				constexpr std::size_t MaximumResponseWords = 19U;
 				std::uint16_t response[MaximumResponseWords] = {};
-				const std::size_t availableWords = receivedLength / 2U;
-				const std::size_t responseWords =
-					availableWords < wordCount ? availableWords : wordCount;
-				for (std::size_t i = 0U; i < responseWords; ++i)
+				for (std::size_t i = 0U; i < wordCount; ++i)
 					response[i] = static_cast<std::uint16_t>(
-						(static_cast<std::uint16_t>(received[i * 2U]) << 8U) |
-						received[i * 2U + 1U]);
-				responseCallback(response, responseWords);
-			});
+						(static_cast<std::uint16_t>(slot->Receive[i * 2U]) << 8U) |
+						slot->Receive[i * 2U + 1U]);
+				slot->InUse = false;
+				responseCallback(response, wordCount);
+			}))
+			return true;
+
+		slot->InUse = false;
+		return false;
 	}
 
 	bool Delphi28046304Device::RequestIdentification(

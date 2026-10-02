@@ -15,11 +15,12 @@ namespace E78
 
 	private:
 		EmbeddedIOServices::ISPIService& _service;
-		volatile std::uint8_t _transmit[PacketLength] = {
+		std::uint8_t _transmit[PacketLength] = {
 			0x06U, 0xFFU, 0xFFU, 0x01U, 0x00U, 0x00U,
 			0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
 			0xFFU, 0x53U, 0x10U, 0x00U, 0x09U, 0xB2U,
 		};
+		std::uint8_t _receive[PacketLength] = {};
 		volatile bool _transferPending = false;
 
 		std::uint8_t ComputeXor() const;

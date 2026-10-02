@@ -23,7 +23,17 @@ namespace E78
 	class Delphi28046304Device final
 	{
 	private:
+		static constexpr std::size_t MaximumWords = 19U;
+		static constexpr std::size_t TransferSlotCount = 8U;
+		struct TransferSlot
+		{
+			std::uint8_t Transmit[MaximumWords * 2U] = {};
+			std::uint8_t Receive[MaximumWords * 2U] = {};
+			volatile bool InUse = false;
+		};
+
 		EmbeddedIOServices::ISPIService& _service;
+		TransferSlot _transferSlots[TransferSlotCount] = {};
 		std::uint16_t _rotatingDiagnosticCommand = 0x011FU;
 		std::uint16_t _rotatingDiagnosticValue = 0x0000U;
 		std::uint32_t _discreteOutputs = 0U;
@@ -40,6 +50,9 @@ namespace E78
 			std::size_t wordCount);
 
 	public:
+		static constexpr std::size_t MaximumTransferLength =
+			MaximumWords * sizeof(std::uint16_t);
+
 		explicit Delphi28046304Device(
 			EmbeddedIOServices::ISPIService& service)
 			: _service(service) {}
