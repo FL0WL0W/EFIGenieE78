@@ -90,6 +90,7 @@ set_property(TARGET firmware.elf PROPERTY LINK_DEPENDS ${MPC5566_LINKER_SCRIPT})
 target_compile_definitions(firmware.elf PRIVATE MPC5566)
 target_link_libraries(firmware.elf EFIGenie)
 target_link_options(firmware.elf PRIVATE
+	"LINKER:-Map,${CMAKE_BINARY_DIR}/firmware.map"
     "LINKER:--wrap=_malloc_r"
     "LINKER:--wrap=_free_r")
 

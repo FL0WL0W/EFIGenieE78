@@ -45,7 +45,13 @@ SECTIONS
 
 	.text_booke : ALIGN(4)
 	{
-		*(.text*)
+		*(EXCLUDE_FILE(
+			*libEFIGenie.a:*
+			*libReluctorOperations.a:*
+			*libEmbeddedIOOperations.a:*
+			*libOperationArchitecture.a:*
+			*libEmbeddedIOServices.a:*
+			*EmbeddedIOServices/HardwareAbstractions/MPC5xxx/src/*.obj) .text*)
 		KEEP(*(.init))
 		KEEP(*(.fini))
 	} > FLASH
@@ -69,7 +75,62 @@ SECTIONS
 		__INTERRUPT_CACHE_LOCK_END = .;
 	} > FLASH
 
-	.ctors : ALIGN(4)
+	/*
+	 * Keep each static library in its own physical 128-KiB flash block. This
+	 * deliberately leaves erased 0xFF space after each library so block-hash
+	 * based updates can skip every library whose contents did not change.
+	 */
+	.library_efigenie 0x000E0000 : ALIGN(4)
+	{
+		__EFIGENIE_LIBRARY_START = .;
+		*libEFIGenie.a:*(.text* .rodata* .gnu.linkonce.t.* .gnu.linkonce.r.*)
+		__EFIGENIE_LIBRARY_END = .;
+	} > FLASH
+
+	.library_reluctor_operations 0x00100000 : ALIGN(4)
+	{
+		__RELUCTOR_OPERATIONS_LIBRARY_START = .;
+		*libReluctorOperations.a:*(.text* .rodata* .gnu.linkonce.t.* .gnu.linkonce.r.*)
+		__RELUCTOR_OPERATIONS_LIBRARY_END = .;
+	} > FLASH
+
+	.library_embedded_io_operations 0x00120000 : ALIGN(4)
+	{
+		__EMBEDDED_IO_OPERATIONS_LIBRARY_START = .;
+		*libEmbeddedIOOperations.a:*(.text* .rodata* .gnu.linkonce.t.* .gnu.linkonce.r.*)
+		__EMBEDDED_IO_OPERATIONS_LIBRARY_END = .;
+	} > FLASH
+
+	.library_operation_architecture 0x00140000 : ALIGN(4)
+	{
+		__OPERATION_ARCHITECTURE_LIBRARY_START = .;
+		*libOperationArchitecture.a:*(.text* .rodata* .gnu.linkonce.t.* .gnu.linkonce.r.*)
+		__OPERATION_ARCHITECTURE_LIBRARY_END = .;
+	} > FLASH
+
+	.library_embedded_io_services 0x00160000 : ALIGN(4)
+	{
+		__EMBEDDED_IO_SERVICES_LIBRARY_START = .;
+		*libEmbeddedIOServices.a:*(.text* .rodata* .gnu.linkonce.t.* .gnu.linkonce.r.*)
+		__EMBEDDED_IO_SERVICES_LIBRARY_END = .;
+	} > FLASH
+
+	/*
+	 * The MPC5xxx hardware layer is compiled directly into the executable,
+	 * rather than into libEmbeddedIOServices.a. Keep it independently aligned
+	 * as well. Its used FlexCAN and SPI code currently needs slightly more than
+	 * one block, so reserve two physical flash blocks for it.
+	 */
+	.platform_mpc5xxx 0x00180000 : ALIGN(4)
+	{
+		__MPC5XXX_PLATFORM_START = .;
+		*EmbeddedIOServices/HardwareAbstractions/MPC5xxx/src/*.obj(
+			.text* .rodata* .gnu.linkonce.t.* .gnu.linkonce.r.*)
+		__MPC5XXX_PLATFORM_END = .;
+	} > FLASH
+
+	/* Shared application metadata and initialized-data load images use the next block. */
+	.ctors 0x001C0000 : ALIGN(4)
 	{
 		__CTOR_LIST__ = .;
 		KEEP(*crtbegin.o(.ctors))
@@ -195,6 +256,20 @@ SECTIONS
 	ASSERT(__HEAP_END <= __STACK_BOTTOM, "heap and stack regions overlap")
 	ASSERT(__SP_INIT == __BOOT_UPLOAD_REQUEST, "stack is not immediately below the boot upload marker")
 	ASSERT(ADDR(.startup) == 0x00080018, "patched-bootloader application entry moved")
+	ASSERT(__INTERRUPT_CACHE_LOCK_END <= 0x000E0000,
+	       "application/platform code overlaps the first library block")
+	ASSERT(SIZEOF(.library_efigenie) <= 0x20000,
+	       "EFIGenie library exceeds its 128-KiB flash block")
+	ASSERT(SIZEOF(.library_reluctor_operations) <= 0x20000,
+	       "ReluctorOperations library exceeds its 128-KiB flash block")
+	ASSERT(SIZEOF(.library_embedded_io_operations) <= 0x20000,
+	       "EmbeddedIOOperations library exceeds its 128-KiB flash block")
+	ASSERT(SIZEOF(.library_operation_architecture) <= 0x20000,
+	       "OperationArchitecture library exceeds its 128-KiB flash block")
+	ASSERT(SIZEOF(.library_embedded_io_services) <= 0x20000,
+	       "EmbeddedIOServices library exceeds its 128-KiB flash block")
+	ASSERT(SIZEOF(.platform_mpc5xxx) <= 0x40000,
+	       "MPC5xxx hardware layer exceeds its two 128-KiB flash blocks")
 	ASSERT((ADDR(.intc_vector_table) & 0xFFFF) == 0, "interrupt vectors are not 64-KiB aligned")
 	ASSERT(SIZEOF(.intc_vector_table) <= 0x10000, "interrupt vectors exceed one IVPR region")
 	ASSERT((__INTERRUPT_CACHE_LOCK_START & 31) == 0, "interrupt cache-lock start is not line aligned")
