@@ -49,9 +49,10 @@ extern "C" int write(int file, const void* data, std::size_t length)
 }
 
 extern uint32_t _config;
-ServiceRegistry _serviceRegistry;
-EngineMain *_engineMain = 0;
+OperationFactory _operationFactory;
 GeneratorMap<Variable> _variableMap;
+ServiceRegistry _serviceRegistry;
+EngineMain<&_operationFactory, &_variableMap, &_serviceRegistry> _engineMain;
 
 extern "C" int main()
 {
@@ -102,23 +103,13 @@ extern "C" int main()
 		WriteToFlash,
 		ExitToBootloaderUploadRoutine);
 
-	const size_t configSize = _config + sizeof(uint32_t) + sizeof(uint32_t);
 	size_t configgedSize = 0;
-	_engineMain = new EngineMain(&_config, configgedSize, &_serviceRegistry, &_variableMap);
-	if(configSize != configgedSize)
-	{
-		delete _engineMain;
-		_engineMain = 0;
-	}
+	_engineMain.Start(&_config, configgedSize);
 
-	if(_engineMain != 0)
-		_engineMain->Setup();
-
-	const std::uint8_t alive = 0x00U | (_engineMain != 0 ? 0x01U : 0x00U);
+	const std::uint8_t alive = 0x01U;
 	isotp->Send(&alive, 1U);
 	while (true)
 	{
-        if(_engineMain != 0)
-            _engineMain->Loop();
+		_engineMain.Loop();
 	}
 }
