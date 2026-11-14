@@ -25,25 +25,40 @@ namespace
 	}
 }
 
-// This single-thread newlib build does not call __malloc_lock/__malloc_unlock.
-// Linker wrapping its reentrant allocator entry points protects every user of
-// the process heap, including C++ new/delete and standard-library containers.
-// This is required because application code and peripheral ISR callbacks both
-// allocate memory.
-extern "C" void* __real__malloc_r(void* reentrancy, std::size_t size);
-extern "C" void __real__free_r(void* reentrancy, void* allocation);
+// Picolibc's single-thread allocator is shared by main and peripheral callbacks.
+// Wrap every allocation entry point so nested ISR allocations cannot corrupt it.
+extern "C" void* __real_malloc(std::size_t size);
+extern "C" void __real_free(void* allocation);
+extern "C" void* __real_calloc(std::size_t count, std::size_t size);
+extern "C" void* __real_realloc(void* allocation, std::size_t size);
 
-extern "C" void* __wrap__malloc_r(void* const reentrancy, const std::size_t size)
+extern "C" void* __wrap_malloc(const std::size_t size)
 {
-	const std::uint32_t machineState = LockHeap();
-	void* const allocation = __real__malloc_r(reentrancy, size);
-	UnlockHeap(machineState);
-	return allocation;
+    const std::uint32_t machineState = LockHeap();
+    void* const allocation = __real_malloc(size);
+    UnlockHeap(machineState);
+    return allocation;
 }
 
-extern "C" void __wrap__free_r(void* const reentrancy, void* const allocation)
+extern "C" void __wrap_free(void* const allocation)
 {
-	const std::uint32_t machineState = LockHeap();
-	__real__free_r(reentrancy, allocation);
-	UnlockHeap(machineState);
+    const std::uint32_t machineState = LockHeap();
+    __real_free(allocation);
+    UnlockHeap(machineState);
+}
+
+extern "C" void* __wrap_calloc(const std::size_t count, const std::size_t size)
+{
+    const std::uint32_t machineState = LockHeap();
+    void* const allocation = __real_calloc(count, size);
+    UnlockHeap(machineState);
+    return allocation;
+}
+
+extern "C" void* __wrap_realloc(void* const allocation, const std::size_t size)
+{
+    const std::uint32_t machineState = LockHeap();
+    void* const resized = __real_realloc(allocation, size);
+    UnlockHeap(machineState);
+    return resized;
 }

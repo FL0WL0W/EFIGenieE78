@@ -2,6 +2,7 @@
 #include "UDSService.h"
 #include "ServiceRegistry.h"
 #include "EngineMain.h"
+#include "CommunicationHandlers/CommunicationHandler_EFIGenie.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -54,6 +55,33 @@ GeneratorMap<Variable> _variableMap;
 ServiceRegistry _serviceRegistry;
 EngineMain<&_operationFactory, &_variableMap, &_serviceRegistry> _engineMain;
 
+bool e78_write(void *destination, const void *data, size_t length) {
+	if(reinterpret_cast<size_t>(destination) >= 0x20000000 && reinterpret_cast<size_t>(destination) <= 0x2000FA00)
+	{
+		std::memcpy(destination, data, length);
+	}
+	else if(reinterpret_cast<size_t>(destination) >= 0x8004000 && reinterpret_cast<size_t>(destination) <= 0x8008000)
+	{
+		//TODO Write to flash
+	}
+
+	return true;
+}
+
+bool e78_quit() {
+	_engineMain.Stop();
+	return true;
+}
+
+bool e78_start() {
+	size_t configSize = 0;
+	_engineMain.Start(&_config, configSize);
+
+	return true;
+}
+
+CommunicationHandler_EFIGenie _efiGenieHandler(&_variableMap, e78_write, e78_quit, e78_start, &_config);
+
 extern "C" int main()
 {
 	E78::E78System system;
@@ -103,8 +131,16 @@ extern "C" int main()
 		WriteToFlash,
 		ExitToBootloaderUploadRoutine);
 
-	size_t configgedSize = 0;
-	_engineMain.Start(&_config, configgedSize);
+
+	// ESP_LOGI("ASDF", "_config %p ", _efiGenieHandler->_config);
+	ICommunicationService* const efiGenieCommunicationService = MPC5xxx::MPC5xxxFlexCAN2Service::Instance().GetISOTPService(
+				  {0x601U, canBusA},
+				  {0x609U, canBusA});
+	efiGenieCommunicationService->RegisterReceiveCallBack([](communication_send_callback_t send, const void *data, size_t length){ 
+		return _efiGenieHandler.Receive(send, data, length); 
+	});
+
+	e78_start();
 
 	const std::uint8_t alive = 0x01U;
 	isotp->Send(&alive, 1U);

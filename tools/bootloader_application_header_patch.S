@@ -5,24 +5,24 @@
 
 /* Replacement for the stock validator at 0x00012AF0. */
 ValidateCompactApplicationEndMarker:
-	lis     r4, 0x0008
-	lwz     r5, 0x0014(r4)
-	cmplwi  r5, 0x001A
+	lis     4, 0x0008
+	lwz     5, 0x0014(4)
+	cmplwi  5, 0x001A
 	blt     InvalidCompactApplication
-	lis     r6, 0x0028
-	cmplw   r5, r6
+	lis     6, 0x0028
+	cmplw   5, 6
 	bgt     InvalidCompactApplication
-	andi.   r6, r5, 1
+	andi.   6, 5, 1
 	bne     InvalidCompactApplication
-	add     r4, r4, r5
-	lhz     r11, -2(r4)
-	cmplwi  r11, 0x55AA
+	add     4, 4, 5
+	lhz     11, -2(4)
+	cmplwi  11, 0x55AA
 	bne     InvalidCompactApplication
-	li      r3, 1
+	li      3, 1
 	blr
 
 InvalidCompactApplication:
-	li      r3, 0
+	li      3, 0
 	blr
 	nop
 

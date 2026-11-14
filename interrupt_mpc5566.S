@@ -2,9 +2,9 @@
 /*
  * Hardware-vectored interrupt frame.
  *
- * Offset zero contains the interrupted r0, stored by the vector slot's stwu.
+ * Offset zero contains the interrupted 0, stored by the vector slot's stwu.
  * Offset four is intentionally reserved: a normal EABI C++ callee may use the
- * caller-provided LR save word at 4(r1).  The remainder is private to this
+ * caller-provided LR save word at 4(1).  The remainder is private to this
  * assembly trampoline.  The 80-byte size preserves the stack alignment used
  * by the current PowerPC EABI toolchain.
  */
@@ -44,8 +44,8 @@
 .align 2
 
 .macro set_ivor spr, vector
-    li      r5, \vector@l
-    mtspr   \spr, r5
+    li      5, \vector@l
+    mtspr   \spr, 5
 .endm
 
 /*
@@ -68,38 +68,38 @@
 .type InitializeHardwareInterrupts, @function
 InitializeHardwareInterrupts:
 
-    lis     r3, 0xFFF4
-    ori     r3, r3, 0x8000          /* INTC base: 0xFFF48000 */
-    li      r4, 15
-    stw     r4, 0x08(r3)            /* Mask every INTC priority */
+    lis     3, 0xFFF4
+    ori     3, 3, 0x8000          /* INTC base: 0xFFF48000 */
+    li      4, 15
+    stw     4, 0x08(3)            /* Mask every INTC priority */
     mbar
 
-    li      r4, 1                   /* SSCIR CLR bit */
-    addi    r5, r3, 0x20            /* INTC_SSCIR0 */
-    li      r6, 8
+    li      4, 1                   /* SSCIR CLR bit */
+    addi    5, 3, 0x20            /* INTC_SSCIR0 */
+    li      6, 8
 1:
-    stb     r4, 0(r5)
-    addi    r5, r5, 1
-    addic.  r6, r6, -1
+    stb     4, 0(5)
+    addi    5, 5, 1
+    addic.  6, 6, -1
     bne     1b
 
-    li      r4, 0
-    addi    r5, r3, 0x40            /* INTC_PSR0 */
-    li      r6, 330                 /* INTC_PSR0 through INTC_PSR329 */
+    li      4, 0
+    addi    5, 3, 0x40            /* INTC_PSR0 */
+    li      6, 330                 /* INTC_PSR0 through INTC_PSR329 */
 2:
-    stb     r4, 0(r5)
-    addi    r5, r5, 1
-    addic.  r6, r6, -1
+    stb     4, 0(5)
+    addi    5, 5, 1
+    addic.  6, 6, -1
     bne     2b
 
-    lis     r5, MPC5566_INTC_VectorTable@h
-    ori     r5, r5, MPC5566_INTC_VectorTable@l
-    mtspr   63, r5                  /* IVPR */
+    lis     5, MPC5566_INTC_VectorTable@h
+    ori     5, 5, MPC5566_INTC_VectorTable@l
+    mtspr   63, 5                  /* IVPR */
     isync
 
-    mfspr   r4, 1008                /* HID0 */
-    ori     r4, r4, 0x0100          /* DAPUEN: debug uses DSRR0/1 + rfdi */
-    mtspr   1008, r4
+    mfspr   4, 1008                /* HID0 */
+    ori     4, 4, 0x0100          /* DAPUEN: debug uses DSRR0/1 + rfdi */
+    mtspr   1008, 4
     isync
 
     set_ivor 400, CoreCriticalInputVector
@@ -123,10 +123,10 @@ InitializeHardwareInterrupts:
     set_ivor 530, CoreSPERoundExceptionVector
     isync
 
-    li      r4, 1
-    stw     r4, 0x00(r3)            /* INTC_MCR: HVEN=1, VTES=0 */
-    li      r4, 0
-    stw     r4, 0x08(r3)            /* INTC_CPR: PRI=0 */
+    li      4, 1
+    stw     4, 0x00(3)            /* INTC_MCR: HVEN=1, VTES=0 */
+    li      4, 0
+    stw     4, 0x08(3)            /* INTC_CPR: PRI=0 */
     mbar
     isync
     blr
@@ -156,11 +156,11 @@ Default_Handler:
 .section .interrupt_hot, "ax"
 .balign 0x20
 CommonInterruptEntry:
-    stw     r3, R3_OFFSET(r1)
-    mfsrr0  r3
-    stw     r3, SRR0_OFFSET(r1)
-    mfsrr1  r3
-    stw     r3, SRR1_OFFSET(r1)
+    stw     3, R3_OFFSET(1)
+    mfsrr0  3
+    stw     3, SRR0_OFFSET(1)
+    mfsrr1  3
+    stw     3, SRR1_OFFSET(1)
 
     wrteei  1
     b       CommonInterruptContextSaved
@@ -173,73 +173,73 @@ CommonInterruptEntry:
  */
 .balign 0x20
 DigitalInterruptEntry:
-    stw     r3, R3_OFFSET(r1)
-    mfsrr0  r3
-    stw     r3, SRR0_OFFSET(r1)
-    mfsrr1  r3
-    stw     r3, SRR1_OFFSET(r1)
+    stw     3, R3_OFFSET(1)
+    mfsrr0  3
+    stw     3, SRR0_OFFSET(1)
+    mfsrr1  3
+    stw     3, SRR1_OFFSET(1)
 
 CommonInterruptContextSaved:
 
-    stw     r4, R4_OFFSET(r1)
-    stw     r5, R5_OFFSET(r1)
-    stw     r6, R6_OFFSET(r1)
-    stw     r7, R7_OFFSET(r1)
-    stw     r8, R8_OFFSET(r1)
-    stw     r9, R9_OFFSET(r1)
-    stw     r10,R10_OFFSET(r1)
-    stw     r11,R11_OFFSET(r1)
-    stw     r12,R12_OFFSET(r1)
+    stw     4, R4_OFFSET(1)
+    stw     5, R5_OFFSET(1)
+    stw     6, R6_OFFSET(1)
+    stw     7, R7_OFFSET(1)
+    stw     8, R8_OFFSET(1)
+    stw     9, R9_OFFSET(1)
+    stw     10,R10_OFFSET(1)
+    stw     11,R11_OFFSET(1)
+    stw     12,R12_OFFSET(1)
 
-    mflr    r3
-    stw     r3, LR_OFFSET(r1)
-    mfctr   r3
-    stw     r3, CTR_OFFSET(r1)
-    mfcr    r3
-    stw     r3, CR_OFFSET(r1)
-    mfxer   r3
-    stw     r3, XER_OFFSET(r1)
-    mfspr   r3, SPEFSCR
-    stw     r3, SPEFSCR_OFFSET(r1)
+    mflr    3
+    stw     3, LR_OFFSET(1)
+    mfctr   3
+    stw     3, CTR_OFFSET(1)
+    mfcr    3
+    stw     3, CR_OFFSET(1)
+    mfxer   3
+    stw     3, XER_OFFSET(1)
+    mfspr   3, SPEFSCR
+    stw     3, SPEFSCR_OFFSET(1)
 
-    mtctr   r0
+    mtctr   0
     bctrl
 
     mbar
     
-    lwz     r4, R4_OFFSET(r1)
-    lwz     r5, R5_OFFSET(r1)
-    lwz     r6, R6_OFFSET(r1)
-    lwz     r7, R7_OFFSET(r1)
-    lwz     r8, R8_OFFSET(r1)
-    lwz     r9, R9_OFFSET(r1)
-    lwz     r10,R10_OFFSET(r1)
-    lwz     r11,R11_OFFSET(r1)
-    lwz     r12,R12_OFFSET(r1)
-    lwz     r3, LR_OFFSET(r1)
-    mtlr    r3
-    lwz     r3, CTR_OFFSET(r1)
-    mtctr   r3
-    lwz     r3, CR_OFFSET(r1)
-    mtcr    r3
-    lwz     r3, XER_OFFSET(r1)
-    mtxer   r3
-    lwz     r3, SPEFSCR_OFFSET(r1)
-    mtspr   SPEFSCR, r3
+    lwz     4, R4_OFFSET(1)
+    lwz     5, R5_OFFSET(1)
+    lwz     6, R6_OFFSET(1)
+    lwz     7, R7_OFFSET(1)
+    lwz     8, R8_OFFSET(1)
+    lwz     9, R9_OFFSET(1)
+    lwz     10,R10_OFFSET(1)
+    lwz     11,R11_OFFSET(1)
+    lwz     12,R12_OFFSET(1)
+    lwz     3, LR_OFFSET(1)
+    mtlr    3
+    lwz     3, CTR_OFFSET(1)
+    mtctr   3
+    lwz     3, CR_OFFSET(1)
+    mtcr    3
+    lwz     3, XER_OFFSET(1)
+    mtxer   3
+    lwz     3, SPEFSCR_OFFSET(1)
+    mtspr   SPEFSCR, 3
 
     wrteei  0
     
-	lis   r3,0xFFF4
-	ori   r3,r3,0x8018
-	li    r0,0
-	stw   r0,0(r3)       /* INTC.EOIR = 0 */
-    lwz     r3, SRR0_OFFSET(r1)
-    mtsrr0  r3
-    lwz     r3, SRR1_OFFSET(r1)
-    mtsrr1  r3
-    lwz     r3, R3_OFFSET(r1)
-    lwz     r0, 0(r1)
-    addi    r1, r1, INTERRUPT_FRAME_SIZE
+	lis   3,0xFFF4
+	ori   3,3,0x8018
+	li    0,0
+	stw   0,0(3)       /* INTC.EOIR = 0 */
+    lwz     3, SRR0_OFFSET(1)
+    mtsrr0  3
+    lwz     3, SRR1_OFFSET(1)
+    mtsrr1  3
+    lwz     3, R3_OFFSET(1)
+    lwz     0, 0(1)
+    addi    1, 1, INTERRUPT_FRAME_SIZE
     rfi
 
 /*
@@ -253,117 +253,117 @@ CommonInterruptContextSaved:
  */
 .balign 0x20
 CommonCoreExceptionEntry:
-    stw     r3, R3_OFFSET(r1)
-    mfspr   r3, 26                  /* SRR0 */
-    stw     r3, SRR0_OFFSET(r1)
-    mfspr   r3, 27                  /* SRR1 */
-    stw     r3, SRR1_OFFSET(r1)
-    li      r3, 0
+    stw     3, R3_OFFSET(1)
+    mfspr   3, 26                  /* SRR0 */
+    stw     3, SRR0_OFFSET(1)
+    mfspr   3, 27                  /* SRR1 */
+    stw     3, SRR1_OFFSET(1)
+    li      3, 0
     b       CommonCoreExceptionBody
 
 CommonCriticalExceptionEntry:
-    stw     r3, R3_OFFSET(r1)
-    mfspr   r3, 58                  /* CSRR0 */
-    stw     r3, SRR0_OFFSET(r1)
-    mfspr   r3, 59                  /* CSRR1 */
-    stw     r3, SRR1_OFFSET(r1)
-    li      r3, 1
+    stw     3, R3_OFFSET(1)
+    mfspr   3, 58                  /* CSRR0 */
+    stw     3, SRR0_OFFSET(1)
+    mfspr   3, 59                  /* CSRR1 */
+    stw     3, SRR1_OFFSET(1)
+    li      3, 1
     b       CommonCoreExceptionBody
 
 CommonDebugExceptionEntry:
-    stw     r3, R3_OFFSET(r1)
-    mfspr   r3, 574                 /* DSRR0 */
-    stw     r3, SRR0_OFFSET(r1)
-    mfspr   r3, 575                 /* DSRR1 */
-    stw     r3, SRR1_OFFSET(r1)
-    li      r3, 2
+    stw     3, R3_OFFSET(1)
+    mfspr   3, 574                 /* DSRR0 */
+    stw     3, SRR0_OFFSET(1)
+    mfspr   3, 575                 /* DSRR1 */
+    stw     3, SRR1_OFFSET(1)
+    li      3, 2
 
 CommonCoreExceptionBody:
-    stw     r3, RETURN_KIND_OFFSET(r1)
-    stw     r4, R4_OFFSET(r1)
-    stw     r5, R5_OFFSET(r1)
-    stw     r6, R6_OFFSET(r1)
-    stw     r7, R7_OFFSET(r1)
-    stw     r8, R8_OFFSET(r1)
-    stw     r9, R9_OFFSET(r1)
-    stw     r10,R10_OFFSET(r1)
-    stw     r11,R11_OFFSET(r1)
-    stw     r12,R12_OFFSET(r1)
+    stw     3, RETURN_KIND_OFFSET(1)
+    stw     4, R4_OFFSET(1)
+    stw     5, R5_OFFSET(1)
+    stw     6, R6_OFFSET(1)
+    stw     7, R7_OFFSET(1)
+    stw     8, R8_OFFSET(1)
+    stw     9, R9_OFFSET(1)
+    stw     10,R10_OFFSET(1)
+    stw     11,R11_OFFSET(1)
+    stw     12,R12_OFFSET(1)
 
-    mflr    r3
-    stw     r3, LR_OFFSET(r1)
-    mfctr   r3
-    stw     r3, CTR_OFFSET(r1)
-    mfcr    r3
-    stw     r3, CR_OFFSET(r1)
-    mfxer   r3
-    stw     r3, XER_OFFSET(r1)
-    mfspr   r3, SPEFSCR
-    stw     r3, SPEFSCR_OFFSET(r1)
+    mflr    3
+    stw     3, LR_OFFSET(1)
+    mfctr   3
+    stw     3, CTR_OFFSET(1)
+    mfcr    3
+    stw     3, CR_OFFSET(1)
+    mfxer   3
+    stw     3, XER_OFFSET(1)
+    mfspr   3, SPEFSCR
+    stw     3, SPEFSCR_OFFSET(1)
 
-    mtctr   r0
+    mtctr   0
     bctrl
 
     mbar
     wrteei  0
 
-    lwz     r4, R4_OFFSET(r1)
-    lwz     r5, R5_OFFSET(r1)
-    lwz     r6, R6_OFFSET(r1)
-    lwz     r7, R7_OFFSET(r1)
-    lwz     r8, R8_OFFSET(r1)
-    lwz     r9, R9_OFFSET(r1)
-    lwz     r10,R10_OFFSET(r1)
-    lwz     r11,R11_OFFSET(r1)
-    lwz     r12,R12_OFFSET(r1)
-    lwz     r3, LR_OFFSET(r1)
-    mtlr    r3
-    lwz     r3, CTR_OFFSET(r1)
-    mtctr   r3
-    lwz     r3, XER_OFFSET(r1)
-    mtxer   r3
-    lwz     r3, SPEFSCR_OFFSET(r1)
-    mtspr   SPEFSCR, r3
+    lwz     4, R4_OFFSET(1)
+    lwz     5, R5_OFFSET(1)
+    lwz     6, R6_OFFSET(1)
+    lwz     7, R7_OFFSET(1)
+    lwz     8, R8_OFFSET(1)
+    lwz     9, R9_OFFSET(1)
+    lwz     10,R10_OFFSET(1)
+    lwz     11,R11_OFFSET(1)
+    lwz     12,R12_OFFSET(1)
+    lwz     3, LR_OFFSET(1)
+    mtlr    3
+    lwz     3, CTR_OFFSET(1)
+    mtctr   3
+    lwz     3, XER_OFFSET(1)
+    mtxer   3
+    lwz     3, SPEFSCR_OFFSET(1)
+    mtspr   SPEFSCR, 3
 
-    lwz     r3, RETURN_KIND_OFFSET(r1)
-    cmpwi   r3, 1
+    lwz     3, RETURN_KIND_OFFSET(1)
+    cmpwi   3, 1
     beq     .LCoreReturnCritical
-    cmpwi   r3, 2
+    cmpwi   3, 2
     beq     .LCoreReturnDebug
 .LCoreReturnNormal:
-    lwz     r3, CR_OFFSET(r1)
-    mtcr    r3
-    lwz     r3, SRR0_OFFSET(r1)
-    mtspr   26, r3                  /* SRR0 */
-    lwz     r3, SRR1_OFFSET(r1)
-    mtspr   27, r3                  /* SRR1 */
-    lwz     r3, R3_OFFSET(r1)
-    lwz     r0, ORIGINAL_R0_OFFSET(r1)
-    addi    r1, r1, INTERRUPT_FRAME_SIZE
+    lwz     3, CR_OFFSET(1)
+    mtcr    3
+    lwz     3, SRR0_OFFSET(1)
+    mtspr   26, 3                  /* SRR0 */
+    lwz     3, SRR1_OFFSET(1)
+    mtspr   27, 3                  /* SRR1 */
+    lwz     3, R3_OFFSET(1)
+    lwz     0, ORIGINAL_R0_OFFSET(1)
+    addi    1, 1, INTERRUPT_FRAME_SIZE
     rfi
 
 .LCoreReturnCritical:
-    lwz     r3, CR_OFFSET(r1)
-    mtcr    r3
-    lwz     r3, SRR0_OFFSET(r1)
-    mtspr   58, r3                  /* CSRR0 */
-    lwz     r3, SRR1_OFFSET(r1)
-    mtspr   59, r3                  /* CSRR1 */
-    lwz     r3, R3_OFFSET(r1)
-    lwz     r0, ORIGINAL_R0_OFFSET(r1)
-    addi    r1, r1, INTERRUPT_FRAME_SIZE
+    lwz     3, CR_OFFSET(1)
+    mtcr    3
+    lwz     3, SRR0_OFFSET(1)
+    mtspr   58, 3                  /* CSRR0 */
+    lwz     3, SRR1_OFFSET(1)
+    mtspr   59, 3                  /* CSRR1 */
+    lwz     3, R3_OFFSET(1)
+    lwz     0, ORIGINAL_R0_OFFSET(1)
+    addi    1, 1, INTERRUPT_FRAME_SIZE
     rfci
 
 .LCoreReturnDebug:
-    lwz     r3, CR_OFFSET(r1)
-    mtcr    r3
-    lwz     r3, SRR0_OFFSET(r1)
-    mtspr   574, r3                 /* DSRR0 */
-    lwz     r3, SRR1_OFFSET(r1)
-    mtspr   575, r3                 /* DSRR1 */
-    lwz     r3, R3_OFFSET(r1)
-    lwz     r0, ORIGINAL_R0_OFFSET(r1)
-    addi    r1, r1, INTERRUPT_FRAME_SIZE
+    lwz     3, CR_OFFSET(1)
+    mtcr    3
+    lwz     3, SRR0_OFFSET(1)
+    mtspr   574, 3                 /* DSRR0 */
+    lwz     3, SRR1_OFFSET(1)
+    mtspr   575, 3                 /* DSRR1 */
+    lwz     3, R3_OFFSET(1)
+    lwz     0, ORIGINAL_R0_OFFSET(1)
+    addi    1, 1, INTERRUPT_FRAME_SIZE
     rfdi
 
 .macro core_exception_wrapper vector, body, entry=CommonCoreExceptionEntry
@@ -371,9 +371,9 @@ CommonCoreExceptionBody:
     .balign 0x10
     .global \vector
 \vector:
-    stwu    r0,-INTERRUPT_FRAME_SIZE(r1)
-    lis     r0,\body@h
-    ori     r0,r0,\body@l
+    stwu    0,-INTERRUPT_FRAME_SIZE(1)
+    lis     0,\body@h
+    ori     0,0,\body@l
     b       \entry
 .endm
 
@@ -381,9 +381,9 @@ CommonCoreExceptionBody:
 .macro intc_wrapper body, entry=CommonInterruptEntry
     set_weak_default \body
     .balign 0x10
-    stwu    r0,-INTERRUPT_FRAME_SIZE(r1)
-    lis     r0,\body@h
-    ori     r0,r0,\body@l
+    stwu    0,-INTERRUPT_FRAME_SIZE(1)
+    lis     0,\body@h
+    ori     0,0,\body@l
     b       \entry
 .endm
 
@@ -584,84 +584,84 @@ set_weak_default Decrementer_Handler
 .global CoreDecrementerVector
 .type CoreDecrementerVector, @function
 CoreDecrementerVector:
-    stwu    r0, -INTERRUPT_FRAME_SIZE(r1)
-    stw     r3, R3_OFFSET(r1)
-    mfspr   r3, 26                  /* SRR0 */
-    stw     r3, SRR0_OFFSET(r1)
-    mfspr   r3, 27                  /* SRR1 */
-    stw     r3, SRR1_OFFSET(r1)
+    stwu    0, -INTERRUPT_FRAME_SIZE(1)
+    stw     3, R3_OFFSET(1)
+    mfspr   3, 26                  /* SRR0 */
+    stw     3, SRR0_OFFSET(1)
+    mfspr   3, 27                  /* SRR1 */
+    stw     3, SRR1_OFFSET(1)
 
-    lis     r0, 0x0800
-    mtspr   336, r0                 /* TSR[DIS]=1: acknowledge decrementer */
+    lis     0, 0x0800
+    mtspr   336, 0                 /* TSR[DIS]=1: acknowledge decrementer */
 
-    lis     r3, 0xFFF4
-    ori     r3, r3, 0x8000          /* INTC base: 0xFFF48000 */
-    lwz     r0, 0x08(r3)
-    stw     r0, PREVIOUS_CPR_OFFSET(r1)
-    li      r0, 2
-    stw     r0, 0x08(r3)
+    lis     3, 0xFFF4
+    ori     3, 3, 0x8000          /* INTC base: 0xFFF48000 */
+    lwz     0, 0x08(3)
+    stw     0, PREVIOUS_CPR_OFFSET(1)
+    li      0, 2
+    stw     0, 0x08(3)
     mbar
     wrteei  1
 
-    stw     r4, R4_OFFSET(r1)
-    stw     r5, R5_OFFSET(r1)
-    stw     r6, R6_OFFSET(r1)
-    stw     r7, R7_OFFSET(r1)
-    stw     r8, R8_OFFSET(r1)
-    stw     r9, R9_OFFSET(r1)
-    stw     r10,R10_OFFSET(r1)
-    stw     r11,R11_OFFSET(r1)
-    stw     r12,R12_OFFSET(r1)
+    stw     4, R4_OFFSET(1)
+    stw     5, R5_OFFSET(1)
+    stw     6, R6_OFFSET(1)
+    stw     7, R7_OFFSET(1)
+    stw     8, R8_OFFSET(1)
+    stw     9, R9_OFFSET(1)
+    stw     10,R10_OFFSET(1)
+    stw     11,R11_OFFSET(1)
+    stw     12,R12_OFFSET(1)
 
-    mflr    r3
-    stw     r3, LR_OFFSET(r1)
-    mfctr   r3
-    stw     r3, CTR_OFFSET(r1)
-    mfcr    r3
-    stw     r3, CR_OFFSET(r1)
-    mfxer   r3
-    stw     r3, XER_OFFSET(r1)
-    mfspr   r3, SPEFSCR
-    stw     r3, SPEFSCR_OFFSET(r1)
+    mflr    3
+    stw     3, LR_OFFSET(1)
+    mfctr   3
+    stw     3, CTR_OFFSET(1)
+    mfcr    3
+    stw     3, CR_OFFSET(1)
+    mfxer   3
+    stw     3, XER_OFFSET(1)
+    mfspr   3, SPEFSCR
+    stw     3, SPEFSCR_OFFSET(1)
 
     bl      Decrementer_Handler
 
     mbar
     wrteei  0
 
-    lwz     r4, R4_OFFSET(r1)
-    lwz     r5, R5_OFFSET(r1)
-    lwz     r6, R6_OFFSET(r1)
-    lwz     r7, R7_OFFSET(r1)
-    lwz     r8, R8_OFFSET(r1)
-    lwz     r9, R9_OFFSET(r1)
-    lwz     r10,R10_OFFSET(r1)
-    lwz     r11,R11_OFFSET(r1)
-    lwz     r12,R12_OFFSET(r1)
-    lwz     r3, LR_OFFSET(r1)
-    mtlr    r3
-    lwz     r3, CTR_OFFSET(r1)
-    mtctr   r3
-    lwz     r3, XER_OFFSET(r1)
-    mtxer   r3
-    lwz     r3, SPEFSCR_OFFSET(r1)
-    mtspr   SPEFSCR, r3
+    lwz     4, R4_OFFSET(1)
+    lwz     5, R5_OFFSET(1)
+    lwz     6, R6_OFFSET(1)
+    lwz     7, R7_OFFSET(1)
+    lwz     8, R8_OFFSET(1)
+    lwz     9, R9_OFFSET(1)
+    lwz     10,R10_OFFSET(1)
+    lwz     11,R11_OFFSET(1)
+    lwz     12,R12_OFFSET(1)
+    lwz     3, LR_OFFSET(1)
+    mtlr    3
+    lwz     3, CTR_OFFSET(1)
+    mtctr   3
+    lwz     3, XER_OFFSET(1)
+    mtxer   3
+    lwz     3, SPEFSCR_OFFSET(1)
+    mtspr   SPEFSCR, 3
 
-    lis     r3, 0xFFF4
-    ori     r3, r3, 0x8000
-    lwz     r0, PREVIOUS_CPR_OFFSET(r1)
-    stw     r0, 0x08(r3)
+    lis     3, 0xFFF4
+    ori     3, 3, 0x8000
+    lwz     0, PREVIOUS_CPR_OFFSET(1)
+    stw     0, 0x08(3)
     mbar
 
-    lwz     r3, CR_OFFSET(r1)
-    mtcr    r3
-    lwz     r3, SRR0_OFFSET(r1)
-    mtspr   26, r3                  /* SRR0 */
-    lwz     r3, SRR1_OFFSET(r1)
-    mtspr   27, r3                  /* SRR1 */
-    lwz     r3, R3_OFFSET(r1)
-    lwz     r0, ORIGINAL_R0_OFFSET(r1)
-    addi    r1, r1, INTERRUPT_FRAME_SIZE
+    lwz     3, CR_OFFSET(1)
+    mtcr    3
+    lwz     3, SRR0_OFFSET(1)
+    mtspr   26, 3                  /* SRR0 */
+    lwz     3, SRR1_OFFSET(1)
+    mtspr   27, 3                  /* SRR1 */
+    lwz     3, R3_OFFSET(1)
+    lwz     0, ORIGINAL_R0_OFFSET(1)
+    addi    1, 1, INTERRUPT_FRAME_SIZE
     rfi
 .size CoreDecrementerVector, .-CoreDecrementerVector
 core_exception_wrapper CoreFixedIntervalTimerVector, FixedIntervalTimer_Handler

@@ -52,8 +52,16 @@ SECTIONS
 			*libOperationArchitecture.a:*
 			*libEmbeddedIOServices.a:*
 			*EmbeddedIOServices/HardwareAbstractions/MPC5xxx/src/*.obj) .text*)
-		KEEP(*(.init))
-		KEEP(*(.fini))
+	} > FLASH
+
+	.init : ALIGN(4)
+	{
+		KEEP(*(.init .init.*))
+	} > FLASH
+
+	.fini : ALIGN(4)
+	{
+		KEEP(*(.fini .fini.*))
 	} > FLASH
 
 	/*
@@ -133,9 +141,6 @@ SECTIONS
 	.ctors 0x001C0000 : ALIGN(4)
 	{
 		__CTOR_LIST__ = .;
-		KEEP(*crtbegin.o(.ctors))
-		KEEP(*crtbegin?.o(.ctors))
-		KEEP(*(EXCLUDE_FILE(*crtend?.o *crtend.o) .ctors))
 		KEEP(*(SORT(.ctors.*)))
 		KEEP(*(.ctors))
 		__CTOR_END__ = .;
@@ -144,9 +149,6 @@ SECTIONS
 	.dtors : ALIGN(4)
 	{
 		__DTOR_LIST__ = .;
-		KEEP(*crtbegin.o(.dtors))
-		KEEP(*crtbegin?.o(.dtors))
-		KEEP(*(EXCLUDE_FILE(*crtend?.o *crtend.o) .dtors))
 		KEEP(*(SORT(.dtors.*)))
 		KEEP(*(.dtors))
 		__DTOR_END__ = .;
@@ -154,45 +156,43 @@ SECTIONS
 
 	.preinit_array : ALIGN(4)
 	{
-		PROVIDE_HIDDEN(__preinit_array_start = .);
-		KEEP(*(.preinit_array*))
-		PROVIDE_HIDDEN(__preinit_array_end = .);
+		__preinit_array_start = .;
+		KEEP(*(.preinit_array .preinit_array.*))
+		__preinit_array_end = .;
 	} > FLASH
 
 	.init_array : ALIGN(4)
 	{
-		PROVIDE_HIDDEN(__init_array_start = .);
-		KEEP(*(SORT(.init_array.*)))
-		KEEP(*(.init_array*))
-		PROVIDE_HIDDEN(__init_array_end = .);
+		__init_array_start = .;
+		KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+		KEEP(*(.init_array))
+		__init_array_end = .;
 	} > FLASH
 
 	.fini_array : ALIGN(4)
 	{
-		PROVIDE_HIDDEN(__fini_array_start = .);
-		KEEP(*(SORT(.fini_array.*)))
-		KEEP(*(.fini_array*))
-		PROVIDE_HIDDEN(__fini_array_end = .);
+		__fini_array_start = .;
+		KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+		KEEP(*(.fini_array))
+		__fini_array_end = .;
 	} > FLASH
 
 	.rodata : ALIGN(8)
 	{
 		*(.rodata)
 		*(.rodata.*)
+		*(.sdata2 .sdata2.*)
 	} > FLASH
 
-	.sdata2 : ALIGN(4)
+	.eh_frame_hdr : ALIGN(4)
 	{
-		__SDATA2_START__ = .;
-		*(.sdata2)
-		*(.sdata2.*)
-		*(.sbss2)
-		*(.sbss2.*)
+		KEEP(*(.eh_frame_hdr))
 	} > FLASH
-	PROVIDE(_SDA2_BASE_ = ADDR(.sdata2) + 0x8000);
 
-	.eh_frame_hdr : ALIGN(4) { *(.eh_frame_hdr) } > FLASH
-	.eh_frame : ALIGN(4) { KEEP(*(.eh_frame)) } > FLASH
+	.eh_frame : ALIGN(4)
+	{
+		KEEP(*(.eh_frame .eh_frame.*))
+	} > FLASH
 
 	.data : ALIGN(8)
 	{
@@ -201,20 +201,11 @@ SECTIONS
 		*(.data.*)
 		*(.got2)
 		*(.got2.*)
+		*(.sdata .sdata.*)
 		__DATA_END = .;
 	} > SRAM AT> FLASH
 	__DATA_LOAD = LOADADDR(.data);
 	__DATA_SIZE = SIZEOF(.data);
-
-	.sdata : ALIGN(4)
-	{
-		__SDATA_START__ = .;
-		*(.sdata)
-		*(.sdata.*)
-	} > SRAM AT> FLASH
-	__SDATA_LOAD = LOADADDR(.sdata);
-	__SDATA_SIZE = SIZEOF(.sdata);
-	PROVIDE(_SDA_BASE_ = ADDR(.sdata) + 0x8000);
 
 	/* Written last in the compact image and located through the header length. */
 	.application_validity : ALIGN(2)
@@ -228,6 +219,7 @@ SECTIONS
 		__BSS_START = .;
 		*(.sbss)
 		*(.sbss.*)
+		*(.sbss2 .sbss2.*)
 		*(.bss)
 		*(.bss.*)
 		*(COMMON)
@@ -251,6 +243,11 @@ SECTIONS
 		. += __STACK_SIZE;
 		__SP_INIT = .;
 	} > SRAM
+
+	/DISCARD/ :
+	{
+		*(.comment .note.GNU-stack)
+	}
 
 	ASSERT(__APPLICATION_DATA_SRAM_END <= __HEAP, "application data overlaps the heap")
 	ASSERT(__HEAP_END <= __STACK_BOTTOM, "heap and stack regions overlap")
