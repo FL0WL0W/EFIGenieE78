@@ -302,6 +302,12 @@ CommonCoreExceptionBody:
     stw     3, SPEFSCR_OFFSET(1)
 
     mtctr   0
+    /* Optional diagnostic arguments: saved frame, interrupted r28 and r30.
+     * Ordinary void handlers ignore them. Capture before compiled code can
+     * repurpose registers; the original r3-r12 are already saved above. */
+    mr      3, 1
+    mr      4, 28
+    mr      5, 30
     bctrl
 
     mbar

@@ -3,6 +3,7 @@
 #include "MPC5xxxFlexCAN2Service.h"
 
 #include <cstdint>
+#include <cstddef>
 #include <cstdio>
 
 using EmbeddedIOServices::ICommunicationService;
@@ -26,6 +27,32 @@ namespace
 		std::uint32_t ExceptionSyndrome;
 		std::uint32_t MachineCheckSyndrome;
 	};
+
+	// Matches the 80-byte context saved by CommonCoreExceptionBody.
+	struct CoreExceptionFrame
+	{
+		std::uint32_t OriginalR0;
+		std::uint32_t AbiLrSave;
+		std::uint32_t Gpr3Through12[10];
+		std::uint32_t Lr, Ctr, Cr, Xer, Spefscr, Srr0, Srr1, ReturnKind;
+	};
+	static_assert(sizeof(CoreExceptionFrame) == 80);
+	static_assert(offsetof(CoreExceptionFrame, Gpr3Through12) == 8);
+	static_assert(offsetof(CoreExceptionFrame, Lr) == 48);
+	static_assert(offsetof(CoreExceptionFrame, Srr0) == 68);
+
+	struct FaultRegisters
+	{
+		std::uint32_t R1, R3, R4, R28, R30, Lr, R28Plus8, R30Plus16;
+	};
+
+	std::uint32_t ReadSramWord(const std::uint32_t address)
+	{
+		// Never turn the fault report into another invalid-memory access.
+		if ((address & 3U) != 0U || address < 0x40000000U || address > 0x4001FFFCU)
+			return 0xFFFFFFFFU;
+		return *reinterpret_cast<volatile const std::uint32_t*>(address);
+	}
 
 	std::uint32_t ReadSRR0()
 	{
@@ -122,7 +149,8 @@ namespace
 
 	[[noreturn]] void FatalException(
 		const char* const name,
-		const SavedStateKind stateKind = SavedStateKind::Normal)
+		const SavedStateKind stateKind = SavedStateKind::Normal,
+		const FaultRegisters* registers = nullptr)
 	{
 		// Core-exception entry has MSR[EE] clear. Keep it clear: PollFlexCAN()
 		// advances both CAN and ISO-TP explicitly without allowing unrelated
@@ -144,13 +172,28 @@ namespace
 				isotpConsole->Ready())
 			{
 				std::printf(
-					"FATAL %s PC=%08lX MSR=%08lX DEAR=%08lX ESR=%08lX MCSR=%08lX\n",
+					"FATAL %s PC=%08lX MSR=%08lX DEAR=%08lX ESR=%08lX MCSR=%08lX",
 					name,
 					static_cast<unsigned long>(snapshot.ProgramCounter),
 					static_cast<unsigned long>(snapshot.MachineState),
 					static_cast<unsigned long>(snapshot.DataExceptionAddress),
 					static_cast<unsigned long>(snapshot.ExceptionSyndrome),
 					static_cast<unsigned long>(snapshot.MachineCheckSyndrome));
+				if (registers != nullptr)
+				{
+					std::printf(
+						" R1=%08lX R3=%08lX R4=%08lX R28=%08lX R30=%08lX LR=%08lX R28_8=%08lX R30_16=%08lX",
+						static_cast<unsigned long>(registers->R1),
+						static_cast<unsigned long>(registers->R3),
+						static_cast<unsigned long>(registers->R4),
+						static_cast<unsigned long>(registers->R28),
+						static_cast<unsigned long>(registers->R30),
+						static_cast<unsigned long>(registers->Lr),
+						static_cast<unsigned long>(registers->R28Plus8),
+						static_cast<unsigned long>(registers->R30Plus16));
+				}
+				// One newline queues the complete report as one console message.
+				std::printf("\n");
 				reportQueued = true;
 			}
 		}
@@ -167,9 +210,16 @@ extern "C" void MachineCheck_Handler()
 	FatalException("MachineCheck", SavedStateKind::Critical);
 }
 
-extern "C" void DataStorage_Handler()
+extern "C" void DataStorage_Handler(
+	const CoreExceptionFrame* frame, std::uint32_t interruptedR28, std::uint32_t interruptedR30)
 {
-	FatalException("DataStorage");
+	const FaultRegisters registers = {
+		static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(frame) + sizeof(*frame)),
+		frame->Gpr3Through12[0], frame->Gpr3Through12[1],
+		interruptedR28, interruptedR30, frame->Lr,
+		ReadSramWord(interruptedR28 + 8U), ReadSramWord(interruptedR30 + 16U),
+	};
+	FatalException("DataStorage", SavedStateKind::Normal, &registers);
 }
 
 extern "C" void InstructionStorage_Handler()
