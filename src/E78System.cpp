@@ -193,13 +193,14 @@ namespace E78
 
 	void E78System::Initialize()
 	{
-		TimerService.Calibrate();
-		E78ServiceTimer.Calibrate();
+		// we don't need a calibrated timer for the watchdog stuff
 		E78ServiceTimer.ScheduleTask(&_serviceWatchdogTask, E78ServiceTimer.GetTick());
 		Delphi28046304.RequestIdentification(
 			[this](const std::uint16_t*, std::size_t) {
 				ContinueAfterFirstIdentification();
 			});
+		// calibrate the main timer
+		TimerService.Calibrate();
 	}
 
 	void E78System::ContinueAfterFirstIdentification()
