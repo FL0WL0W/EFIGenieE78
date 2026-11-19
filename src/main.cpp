@@ -111,6 +111,7 @@ extern "C" int main()
 				  {0x7E0U, canBusA},
 				  {0x7E8U, canBusA},
 				  &system.TimerService);
+	
 	const E78::UDSMemoryRegion udsReadRegions[] = {
 		{0x00000000U, 0x00300000U, true},
 		{0x00FFFC00U, 0x00000400U, true},
@@ -119,7 +120,6 @@ extern "C" int main()
 	const E78::UDSMemoryRegion udsWriteRegions[] = {
 		{reinterpret_cast<uint32_t>(&_config), 0x00020000U, true},
 		{0x40000000U, 0x00020000U, false},
-		{0x002E0000U, 0x00020000U, true},
 	};
 	E78::UDSService uds(
 		*isotp,
