@@ -80,8 +80,6 @@ bool e78_start() {
 	return true;
 }
 
-CommunicationHandler_EFIGenie _efiGenieHandler(&_variableMap, e78_write, e78_quit, e78_start, &_config);
-
 extern "C" int main()
 {
 	E78::E78System system;
@@ -114,15 +112,14 @@ extern "C" int main()
 				  {0x7E8U, canBusA},
 				  &system.TimerService);
 	const E78::UDSMemoryRegion udsReadRegions[] = {
-		{0x00000000U, 0x00003FE0U, true},
-		{0x00004000U, 0x0001BFE0U, true},
-		{0x00020000U, 0x003E0000U, true},
+		{0x00000000U, 0x00300000U, true},
 		{0x00FFFC00U, 0x00000400U, true},
-		{0x40000000U, 0x00040000U, false},
+		{0x40000000U, 0x00020000U, false},
 	};
 	const E78::UDSMemoryRegion udsWriteRegions[] = {
 		{reinterpret_cast<uint32_t>(&_config), 0x00020000U, true},
-		{0x40000000U, 0x00040000U, false},
+		{0x40000000U, 0x00020000U, false},
+		{0x002E0000U, 0x00020000U, true},
 	};
 	E78::UDSService uds(
 		*isotp,
@@ -134,13 +131,13 @@ extern "C" int main()
 		ExitToBootloaderUploadRoutine);
 
 
-	// ESP_LOGI("ASDF", "_config %p ", _efiGenieHandler->_config);
+	CommunicationHandler_EFIGenie efiGenieHandler(&_variableMap, &system.TimerService, e78_write, e78_quit, e78_start, &_config);
 	ICommunicationService* const efiGenieCommunicationService = MPC5xxx::MPC5xxxFlexCAN2Service::Instance().GetISOTPService(
 				  {0x601U, canBusA},
 				  {0x609U, canBusA},
 				  &system.TimerService);
-	efiGenieCommunicationService->RegisterReceiveCallBack([](communication_send_callback_t send, const void *data, size_t length){ 
-		return _efiGenieHandler.Receive(send, data, length); 
+	efiGenieCommunicationService->RegisterReceiveCallBack([&efiGenieHandler](ICommunicationService* sendService, const void *data, size_t length){ 
+		return efiGenieHandler.Receive(sendService, data, length); 
 	});
 
 	e78_start();

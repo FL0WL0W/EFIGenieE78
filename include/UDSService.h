@@ -66,36 +66,36 @@ namespace E78
 			const std::uint8_t* data,
 			std::size_t length);
 		void SendNegative(
-			const EmbeddedIOServices::communication_send_callback_t& send,
+			EmbeddedIOServices::ICommunicationService *sendService,
 			std::uint8_t service,
 			std::uint8_t code) const;
 		std::size_t HandleRequest(
-			EmbeddedIOServices::communication_send_callback_t send,
+			EmbeddedIOServices::ICommunicationService *sendService,
 			const void* data,
 			std::size_t length);
 		std::size_t HandleReadMemory(
-			const EmbeddedIOServices::communication_send_callback_t& send,
+			EmbeddedIOServices::ICommunicationService *sendService,
 			const std::uint8_t* data,
 			std::size_t length);
 		std::size_t HandleRequestTransfer(
-			const EmbeddedIOServices::communication_send_callback_t& send,
+			EmbeddedIOServices::ICommunicationService *sendService,
 			const std::uint8_t* data,
 			std::size_t length,
 			bool upload);
 		std::size_t HandleTransferData(
-			const EmbeddedIOServices::communication_send_callback_t& send,
+			EmbeddedIOServices::ICommunicationService *sendService,
 			const std::uint8_t* data,
 			std::size_t length);
 		std::size_t HandleUploadData(
-			const EmbeddedIOServices::communication_send_callback_t& send,
+			EmbeddedIOServices::ICommunicationService *sendService,
 			const std::uint8_t* data,
 			std::size_t length);
 		std::size_t HandleDownloadData(
-			const EmbeddedIOServices::communication_send_callback_t& send,
+			EmbeddedIOServices::ICommunicationService *sendService,
 			const std::uint8_t* data,
 			std::size_t length);
 		std::size_t HandleTransferExit(
-			const EmbeddedIOServices::communication_send_callback_t& send,
+			EmbeddedIOServices::ICommunicationService *sendService,
 			std::size_t length);
 
 	public:
