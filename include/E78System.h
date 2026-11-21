@@ -4,6 +4,7 @@
 #include "Delphi28046304Device.h"
 #include "DelphiDSIDigitalService.h"
 #include "E78DigitalService.h"
+#include "E78AnalogService.h"
 #include "ICommunicationService.h"
 #include "MPC5xxxDigitalService.h"
 #include "MPC5xxxFlexCAN2Service.h"
@@ -48,6 +49,7 @@ namespace E78
 		MPMDevice MPM;
 		Delphi28046304Device Delphi28046304;
 		E78DigitalService DigitalService;
+		E78AnalogService AnalogService;
 
 		E78System();
 

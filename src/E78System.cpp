@@ -155,7 +155,8 @@ namespace E78
 		  DigitalService(
 			  MPCDigitalService,
 			  DelphiDigitalOutputService,
-			  Delphi28046304)
+			  Delphi28046304),
+		  AnalogService()
 	{
 		// E78 board-specific SPI routing, copied from the stock application's
 		// PCR image. E78System owns every pad it uses and does not depend on

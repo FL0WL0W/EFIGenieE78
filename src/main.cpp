@@ -103,7 +103,7 @@ extern "C" int main()
 
 	system.Initialize();
 	_serviceRegistry.Register<IDigitalService>(&system.DigitalService);
-	// _serviceRegistry.Register<IAnalogService>(&system.AnalogService);
+	_serviceRegistry.Register<IAnalogService>(&system.AnalogService);
 	_serviceRegistry.Register<ITimerService>(&system.TimerService);
 	// _serviceRegistry.Register<IPwmService>(&system.PwmService);
 
